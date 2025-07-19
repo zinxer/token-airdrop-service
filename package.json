@@ -4,9 +4,10 @@
   "description": "Acme Algorithmic Distribution Backend - ERC-20 token distribution system with anti-dump mechanisms",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
+    "cleanup": "./scripts/cleanup.sh",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:reset": "prisma migrate reset",
@@ -32,6 +33,7 @@
   },
   "homepage": "https://github.com/zinxer/token-airdrop-service#readme",
   "dependencies": {
+    "@ethersproject/experimental": "^5.8.0",
     "@prisma/client": "^6.12.0",
     "alchemy-sdk": "^3.6.1",
     "cors": "^2.8.5",
@@ -51,6 +53,7 @@
     "@types/node": "^24.0.14",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.16",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3"
   }

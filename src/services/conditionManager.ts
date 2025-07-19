@@ -120,4 +120,12 @@ export async function loadConditionManager(): Promise<ConditionManager> {
   };
 
   return new ConditionManager(conditionConfig);
+}
+
+/**
+ * Reload condition manager with fresh configuration from database
+ * This is useful when configuration changes while the service is running
+ */
+export async function reloadConditionManager(): Promise<ConditionManager> {
+  return await loadConditionManager();
 } 

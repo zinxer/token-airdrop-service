@@ -11,10 +11,11 @@ export class AlchemyOptimized {
   private lastRequestTime = 0;
   private currentCUsUsed = 0;
   private cuResetTime = Date.now();
-  private readonly RATE_LIMIT_DELAY = 50; // ms between requests to respect rate limits
+  private readonly RATE_LIMIT_DELAY = 100; // Increased from 50ms to 100ms for more conservative rate limiting
   private readonly MAX_CUS_PER_SECOND = 500; // Alchemy's limit
   private readonly CU_PER_REQUEST = 20; // Each getCode/getBalance consumes 20 CUs
-  private readonly MAX_CONCURRENT_REQUESTS = Math.floor(500 / 20); // 25 requests max per second
+  private readonly MAX_CONCURRENT_REQUESTS = 10; // Reduced from 25 to 10 for more conservative approach
+  private readonly SAFETY_BUFFER = 0.8; // Only use 80% of the limit to provide safety margin
 
   private constructor() {}
 
@@ -41,7 +42,8 @@ export class AlchemyOptimized {
    */
   private canMakeRequest(): boolean {
     this.resetCUCounter();
-    return this.currentCUsUsed + this.CU_PER_REQUEST <= this.MAX_CUS_PER_SECOND;
+    const safeLimit = Math.floor(this.MAX_CUS_PER_SECOND * this.SAFETY_BUFFER);
+    return this.currentCUsUsed + this.CU_PER_REQUEST <= safeLimit;
   }
 
   /**
@@ -50,7 +52,8 @@ export class AlchemyOptimized {
   private recordCUUsage(): void {
     this.resetCUCounter();
     this.currentCUsUsed += this.CU_PER_REQUEST;
-    logger.debug(`CU usage: ${this.currentCUsUsed}/${this.MAX_CUS_PER_SECOND} (${Math.round(this.currentCUsUsed / this.MAX_CUS_PER_SECOND * 100)}%)`);
+    const safeLimit = Math.floor(this.MAX_CUS_PER_SECOND * this.SAFETY_BUFFER);
+    logger.debug(`CU usage: ${this.currentCUsUsed}/${safeLimit} (${Math.round(this.currentCUsUsed / safeLimit * 100)}%)`);
   }
 
   /**
@@ -74,7 +77,8 @@ export class AlchemyOptimized {
     while (!this.canMakeRequest()) {
       const waitTime = 1000 - (Date.now() - this.cuResetTime);
       if (waitTime > 0) {
-        logger.debug(`CU limit reached (${this.currentCUsUsed}/${this.MAX_CUS_PER_SECOND}), waiting ${waitTime}ms for reset`);
+        const safeLimit = Math.floor(this.MAX_CUS_PER_SECOND * this.SAFETY_BUFFER);
+        logger.debug(`CU limit reached (${this.currentCUsUsed}/${safeLimit}), waiting ${waitTime}ms for reset`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
@@ -172,8 +176,7 @@ export class AlchemyOptimized {
     logger.api.batch('getCode', addresses.length);
     
     const codeMap = new Map<string, string>();
-    const maxConcurrent = Math.min(20, this.MAX_CONCURRENT_REQUESTS); // Max 20 concurrent requests
-    const semaphore = new Semaphore(maxConcurrent);
+    const semaphore = new Semaphore(this.MAX_CONCURRENT_REQUESTS);
     
     const promises = addresses.map(async (address) => {
       return semaphore.acquire().then(async (release) => {
@@ -216,8 +219,7 @@ export class AlchemyOptimized {
     logger.api.batch('getBalance', addresses.length);
     
     const balanceMap = new Map<string, string>();
-    const maxConcurrent = Math.min(20, this.MAX_CONCURRENT_REQUESTS); // Max 20 concurrent requests
-    const semaphore = new Semaphore(maxConcurrent);
+    const semaphore = new Semaphore(this.MAX_CONCURRENT_REQUESTS);
     
     const promises = addresses.map(async (address) => {
       return semaphore.acquire().then(async (release) => {

@@ -197,7 +197,7 @@ router.put('/config', async (req: Request, res: Response) => {
       success: true,
       message: 'Configuration updated successfully',
       configuration: updatedConfig,
-      note: isServiceRunning() ? 'Changes will take effect on next scan cycle' : 'Service is not running'
+      note: isServiceRunning() ? 'Changes will take effect immediately on next scan cycle' : 'Service is not running'
     });
 
   } catch (error) {

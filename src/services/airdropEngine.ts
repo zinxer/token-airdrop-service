@@ -5,6 +5,7 @@ import { prisma } from '@/utils/prisma';
 import { env, account, DISTRIBUTION_WALLET_ADDRESS } from '@/config/env';
 import { logger } from '@/utils/logger';
 import type { Hex } from 'viem';
+import { addAirdropToQueue } from './transactionQueue';
 
 // ERC-20 ABI for token transfers (viem v2 format)
 const ERC20_ABI = [
@@ -252,15 +253,34 @@ export async function executeAirdrop(
         pendingRecordId = pendingRecord.id;
       }
 
-      // Execute transaction
-      const hash = await tokenContract.write.transfer({
-        args: [address as Hex, tokenAmount]
+      logger.info(`Creating transaction for ${amount} TKN to ${address}`);
+      
+      if (!walletClient.account) {
+        throw new Error('Distribution wallet account not available. Check your environment configuration.');
+      }
+
+      // Get the latest nonce for the distribution wallet
+      const nonce = await publicClient.getTransactionCount({
+        address: walletClient.account.address,
+        blockTag: 'pending',
+      });
+      
+      logger.info(`Using nonce ${nonce} for transaction to ${address}`);
+
+      const { request } = await publicClient.simulateContract({
+        account: walletClient.account,
+        address: env.TOKEN_ADDRESS as Hex,
+        abi: ERC20_ABI,
+        functionName: 'transfer',
+        args: [address as Hex, tokenAmount],
+        nonce: nonce,
       });
 
-      logger.info(`Transaction sent: ${hash} (attempt ${attempt})`);
+      const txHash = await walletClient.writeContract(request);
+      
+      logger.info(`Broadcasted transaction: ${txHash}`);
 
-      // Wait for confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
       if (receipt && receipt.status === 'success') {
         // Update record as completed
@@ -268,16 +288,16 @@ export async function executeAirdrop(
           where: { id: pendingRecordId },
           data: {
             status: 'completed',
-            txHash: hash,
+            txHash: txHash,
             gasUsed: receipt.gasUsed.toString()
           }
         });
 
-        logger.airdrop.success(amount, address, hash, receipt.gasUsed.toString());
+        logger.airdrop.success(amount, address, txHash, receipt.gasUsed.toString());
 
         return {
           success: true,
-          txHash: hash,
+          txHash: txHash,
           gasUsed: receipt.gasUsed.toString()
         };
       } else {
@@ -366,51 +386,30 @@ export async function processAirdropBatch(
   totalDistributed: number;
   stopped: boolean;
 }> {
-  logger.airdrop.batch.start(eligibleAddresses.length);
-
   let successful = 0;
   let failed = 0;
   let totalDistributed = 0;
   let stopped = false;
 
+  logger.airdrop.batch.start(eligibleAddresses.length);
+
   for (const address of eligibleAddresses) {
-    // Check if we still have funds
+    // Check wallet funds before each airdrop in a batch
     const walletStatus = await checkWalletFunds();
     if (!walletStatus.ready) {
-      logger.warn('Insufficient funds in distribution wallet, stopping airdrops');
+      logger.warn('Insufficient funds, stopping airdrop batch');
       stopped = true;
       break;
     }
 
-    // Generate random amount
+    // Generate random amount and buffer time
     const amount = generateRandomTokenAmount(config.minTokenAmount, config.maxTokenAmount);
-
-    // Execute airdrop
-    const result = await executeAirdrop(address, amount, blockNumber, config.maxRetries);
-
-    if (result.success) {
-      successful++;
-      totalDistributed += amount;
-      logger.info(`[${successful}] Successfully airdropped ${amount} TKN to ${address}`);
-    } else {
-      failed++;
-      logger.airdrop.failed(address, result.error || 'Unknown error');
-    }
-
-    // Apply random buffer time between airdrops (unless it's the last address)
-    if (address !== eligibleAddresses[eligibleAddresses.length - 1]) {
-      const bufferTime = generateRandomBufferTime(config.minBufferSeconds, config.maxBufferSeconds);
-      logger.buffer.waiting(bufferTime);
-      await new Promise(resolve => setTimeout(resolve, bufferTime * 1000));
-    }
+    
+    // Add to the transaction queue instead of direct execution
+    addAirdropToQueue(address, amount, blockNumber);
   }
 
   logger.airdrop.batch.complete(successful, failed, totalDistributed, stopped);
 
-  return {
-    successful,
-    failed,
-    totalDistributed,
-    stopped
-  };
+  return { successful, failed, totalDistributed, stopped };
 } 

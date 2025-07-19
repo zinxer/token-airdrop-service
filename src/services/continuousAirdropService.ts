@@ -1,14 +1,15 @@
-import { loadConditionManager } from '@/services/conditionManager';
+import { loadConditionManager, reloadConditionManager } from '@/services/conditionManager';
 import { 
   scanBlockForEligibleAddresses, 
   getStartingBlock, 
   getLatestBlockNumber,
   updateLastScannedBlock 
 } from '@/services/blockScanner';
-import { processAirdropBatch, checkWalletFunds } from '@/services/airdropEngine';
+import { checkWalletFunds } from '@/services/airdropEngine';
 import { recoverPendingTransactions } from '@/services/transactionRecovery';
 import { prisma } from '@/utils/prisma';
 import { logger } from '@/utils/logger';
+import { startTransactionQueue, stopTransactionQueue, addAirdropToQueue, getQueueStatus } from '@/services/transactionQueue';
 
 interface AirdropServiceState {
   isRunning: boolean;
@@ -46,8 +47,11 @@ export async function startContinuousAirdropService(): Promise<void> {
   serviceState.errors = 0;
 
   try {
-    // Load configuration and condition manager
-    const conditionManager = await loadConditionManager();
+    // Start the transaction queue
+    await startTransactionQueue();
+
+    // Load initial configuration and condition manager
+    let conditionManager = await loadConditionManager();
     let config = await prisma.airdropConfig.findFirst();
     
     if (!config) {
@@ -102,8 +106,28 @@ export async function startContinuousAirdropService(): Promise<void> {
           break;
         }
 
-        // Update config
-        config = currentConfig;
+        // Check if configuration has changed and reload condition manager if needed
+        if (config.id !== currentConfig.id || 
+            config.minEthBalance !== currentConfig.minEthBalance ||
+            config.maxEthBalance !== currentConfig.maxEthBalance ||
+            config.minTokenAmount !== currentConfig.minTokenAmount ||
+            config.maxTokenAmount !== currentConfig.maxTokenAmount ||
+            config.currentConditionId !== currentConfig.currentConditionId) {
+          
+          logger.info('Configuration changed, reloading condition manager...');
+          logger.debug(`Previous config: ETH ${config.minEthBalance}-${config.maxEthBalance}, TKN ${config.minTokenAmount}-${config.maxTokenAmount}`);
+          logger.debug(`New config: ETH ${currentConfig.minEthBalance}-${currentConfig.maxEthBalance}, TKN ${currentConfig.minTokenAmount}-${currentConfig.maxTokenAmount}`);
+          
+          conditionManager = await reloadConditionManager();
+          config = currentConfig;
+          
+          logger.service.status(
+            `Updated configuration:\n` +
+            `   • Condition: ${currentConfig.currentConditionId}\n` +
+            `   • ETH Range: ${currentConfig.minEthBalance} - ${currentConfig.maxEthBalance}\n` +
+            `   • TKN Range: ${currentConfig.minTokenAmount} - ${currentConfig.maxTokenAmount}`
+          );
+        }
 
         // Check wallet funds
         const walletStatus = await checkWalletFunds();
@@ -119,13 +143,13 @@ export async function startContinuousAirdropService(): Promise<void> {
         
         // If we're caught up, wait for new blocks
         if (serviceState.currentBlock > latestBlock) {
-          logger.info(`Caught up to latest block ${latestBlock}, waiting for new blocks...`);
+          logger.debug(`Caught up to latest block ${latestBlock}, waiting for new blocks...`);
           await new Promise(resolve => setTimeout(resolve, currentConfig.scanIntervalSeconds * 1000));
           continue;
         }
 
         // Scan current block for eligible addresses
-        logger.info(`Scanning block ${serviceState.currentBlock}...`);
+        logger.debug(`Scanning block ${serviceState.currentBlock}...`);
         
         const scanResult = await scanBlockForEligibleAddresses(
           serviceState.currentBlock,
@@ -140,38 +164,14 @@ export async function startContinuousAirdropService(): Promise<void> {
         if (scanResult.eligibleAddresses.length > 0) {
           logger.info(`Found ${scanResult.eligibleAddresses.length} eligible addresses for airdrop`);
           
-          const airdropResult = await processAirdropBatch(
-            scanResult.eligibleAddresses,
-            serviceState.currentBlock,
-            {
-              minTokenAmount: currentConfig.minTokenAmount,
-              maxTokenAmount: currentConfig.maxTokenAmount,
-              minBufferSeconds: currentConfig.minBufferSeconds,
-              maxBufferSeconds: currentConfig.maxBufferSeconds,
-              maxRetries: currentConfig.maxRetries
-            }
-          );
-
-          serviceState.totalDistributed += airdropResult.totalDistributed;
-
-          logger.service.status(
-            `Block ${serviceState.currentBlock} results: ` +
-            `${airdropResult.successful} successful, ${airdropResult.failed} failed, ` +
-            `${airdropResult.totalDistributed} TKN distributed`
-          );
-
-          // If stopped due to insufficient funds, pause the service
-          if (airdropResult.stopped) {
-            logger.warn('Airdrops stopped due to insufficient funds, pausing service...');
-            await new Promise(resolve => setTimeout(resolve, 60000));
-            continue;
+          for (const address of scanResult.eligibleAddresses) {
+            const amount = Math.floor(Math.random() * (currentConfig.maxTokenAmount - currentConfig.minTokenAmount + 1)) + currentConfig.minTokenAmount;
+            addAirdropToQueue(address, amount, serviceState.currentBlock);
           }
 
-          // Skip scanning during buffer period to minimize Alchemy API usage
-          const bufferTime = Math.floor(Math.random() * (currentConfig.maxBufferSeconds - currentConfig.minBufferSeconds + 1)) + currentConfig.minBufferSeconds;
-          logger.buffer.pause(bufferTime);
-          await new Promise(resolve => setTimeout(resolve, bufferTime * 1000));
-          continue;
+          // Log queue status
+          const queueStatus = getQueueStatus();
+          logger.debug(`Queue status: ${queueStatus.queueSize} pending, ${queueStatus.successful} successful, ${queueStatus.failed} failed.`);
         }
 
         // Update last scanned block
@@ -180,8 +180,8 @@ export async function startContinuousAirdropService(): Promise<void> {
         // Move to next block
         serviceState.currentBlock++;
 
-        // Log progress periodically
-        if (serviceState.currentBlock % 10n === 0n) {
+        // Log progress periodically (reduced frequency)
+        if (serviceState.currentBlock % 50n === 0n) {
           const runtime = Math.round((Date.now() - serviceState.startTime.getTime()) / 1000);
           logger.service.status(
             `Service Status (${runtime}s runtime):\n` +
@@ -210,6 +210,9 @@ export async function startContinuousAirdropService(): Promise<void> {
   } finally {
     serviceState.isRunning = false;
     
+    // Stop the transaction queue
+    stopTransactionQueue();
+
     // Update config to inactive
     try {
       const config = await prisma.airdropConfig.findFirst();
@@ -246,6 +249,9 @@ export async function stopContinuousAirdropService(): Promise<void> {
   logger.service.stop('Continuous Airdrop Service');
   serviceState.isRunning = false;
   
+  // Stop the transaction queue
+  stopTransactionQueue();
+
   // Update config to inactive
   try {
     const config = await prisma.airdropConfig.findFirst();
@@ -263,12 +269,13 @@ export async function stopContinuousAirdropService(): Promise<void> {
 /**
  * Get current service status
  */
-export function getServiceStatus(): Omit<AirdropServiceState, 'currentBlock'> & { currentBlock: string; runtime: number } {
+export function getServiceStatus(): Omit<AirdropServiceState, 'currentBlock'> & { currentBlock: string; runtime: number; queueStatus: any } {
   const runtime = Math.round((Date.now() - serviceState.startTime.getTime()) / 1000);
   return {
     ...serviceState,
     currentBlock: serviceState.currentBlock.toString(), // Convert BigInt to string for JSON serialization
-    runtime
+    runtime,
+    queueStatus: getQueueStatus(),
   };
 }
 

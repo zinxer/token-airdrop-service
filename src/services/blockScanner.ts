@@ -4,6 +4,10 @@ import { ConditionManager } from '@/services/conditionManager';
 import { logger } from '@/utils/logger';
 import { Utils } from 'alchemy-sdk';
 
+// Constants for throttling
+const MAX_ADDRESSES_PER_BLOCK = 50; // Limit addresses per block to prevent CU overload
+const BATCH_DELAY_MS = 2000; // 2 second delay between large batch operations
+
 /**
  * Block scanner that monitors blockchain for eligible addresses
  * Uses optimized batch requests to minimize Alchemy API calls
@@ -44,14 +48,27 @@ export async function scanBlockForEligibleAddresses(
       }
     }
 
-    logger.info(`Found ${uniqueAddresses.size} unique addresses in block ${blockNumber}`);
+    // Limit the number of addresses to process to prevent CU overload
+    const addresses = Array.from(uniqueAddresses).slice(0, MAX_ADDRESSES_PER_BLOCK);
+    
+    if (addresses.length < uniqueAddresses.size) {
+      logger.warn(`Block ${blockNumber} has ${uniqueAddresses.size} addresses, limiting to ${MAX_ADDRESSES_PER_BLOCK} to prevent CU overload`);
+    }
+
+    logger.debug(`Found ${addresses.length} unique addresses in block ${blockNumber} (limited from ${uniqueAddresses.size})`);
 
     const eligibleAddresses: string[] = [];
     let errors = 0;
 
     // Batch get code for all addresses to check for contracts
-    const addresses = Array.from(uniqueAddresses);
+    logger.debug(`Getting contract code for ${addresses.length} addresses...`);
     const codeMap = await alchemyOptimized.getCodeBatch(addresses);
+    
+    // Add delay after large batch operation
+    if (addresses.length > 10) {
+      logger.debug(`Waiting ${BATCH_DELAY_MS}ms after code batch to respect rate limits...`);
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+    }
     
     // Filter out contract addresses
     const userAddresses = addresses.filter(address => {
@@ -63,37 +80,46 @@ export async function scanBlockForEligibleAddresses(
       return true;
     });
 
-    logger.info(`Filtered to ${userAddresses.length} user addresses (excluded ${addresses.length - userAddresses.length} contracts)`);
+    logger.debug(`Filtered to ${userAddresses.length} user addresses (excluded ${addresses.length - userAddresses.length} contracts)`);
 
     // Batch get balances for all user addresses
-    const balanceMap = await alchemyOptimized.getBalanceBatch(userAddresses);
+    if (userAddresses.length > 0) {
+      logger.debug(`Getting balances for ${userAddresses.length} user addresses...`);
+      const balanceMap = await alchemyOptimized.getBalanceBatch(userAddresses);
+      
+      // Add delay after large batch operation
+      if (userAddresses.length > 10) {
+        logger.debug(`Waiting ${BATCH_DELAY_MS}ms after balance batch to respect rate limits...`);
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+      }
 
-    // Check each address for eligibility
-    for (const address of userAddresses) {
-      try {
-        const balanceHex = balanceMap.get(address);
-        if (!balanceHex) {
-          logger.warn(`No balance found for address ${address}`);
-          continue;
+      // Check each address for eligibility
+      for (const address of userAddresses) {
+        try {
+          const balanceHex = balanceMap.get(address);
+          if (!balanceHex) {
+            logger.warn(`No balance found for address ${address}`);
+            continue;
+          }
+
+          const ethBalance = Utils.formatEther(balanceHex);
+
+          // Check eligibility using condition manager
+          const eligibilityResult = await conditionManager.checkEligibility(
+            address,
+            ethBalance,
+            blockNumber,
+            currentConditionId
+          );
+
+          if (eligibilityResult.eligible) {
+            eligibleAddresses.push(address);
+            logger.blockchain.eligible(address, parseFloat(ethBalance).toFixed(6), eligibilityResult.reason);
+          }
+        } catch (error) {
+          errors++;
+          logger.blockchain.error(address, error);
         }
-
-        const ethBalance = Utils.formatEther(balanceHex);
-
-        // Check eligibility using condition manager
-        const eligibilityResult = await conditionManager.checkEligibility(
-          address,
-          ethBalance,
-          blockNumber,
-          currentConditionId
-        );
-
-        if (eligibilityResult.eligible) {
-          eligibleAddresses.push(address);
-          logger.blockchain.eligible(address, parseFloat(ethBalance).toFixed(6), eligibilityResult.reason);
-        }
-      } catch (error) {
-        errors++;
-        logger.blockchain.error(address, error);
       }
     }
 

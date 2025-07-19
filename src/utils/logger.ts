@@ -6,7 +6,17 @@
 
 export type LogLevel = 'I' | 'D' | 'W' | 'E';
 
+// Log level configuration - set to 'I' for production, 'D' for development
+const LOG_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel) || 'I';
+
+const shouldLog = (level: LogLevel): boolean => {
+  const levels: Record<LogLevel, number> = { 'D': 0, 'I': 1, 'W': 2, 'E': 3 };
+  return levels[level] >= levels[LOG_LEVEL];
+};
+
 const log = (level: LogLevel, message: string) => {
+  if (!shouldLog(level)) return;
+  
   const ts = new Date().toLocaleString('en-US', {
     year: 'numeric',
     month: '2-digit',
@@ -34,21 +44,21 @@ export const logger = {
   },
   
   blockchain: {
-    scan: (blockNumber: bigint) => logger.info(`🔍 Scanning block ${blockNumber} for eligible addresses`),
-    found: (count: number, total: number) => logger.info(`📊 Found ${count}/${total} eligible addresses`),
+    scan: (blockNumber: bigint) => logger.debug(`🔍 Scanning block ${blockNumber} for eligible addresses`),
+    found: (count: number, total: number) => logger.debug(`📊 Found ${count}/${total} eligible addresses`),
     eligible: (address: string, balance: string, reason: string) => 
       logger.info(`✅ Eligible address found: ${address} (${balance} ETH) - ${reason}`),
-    contract: (address: string) => logger.info(`⏭️  Skipping contract address: ${address}`),
+    contract: (address: string) => logger.debug(`⏭️  Skipping contract address: ${address}`),
     error: (address: string, error: any) => logger.error(`❌ Error checking address ${address}: ${error}`),
   },
   
   airdrop: {
-    attempt: (amount: number, address: string) => logger.info(`💸 Attempting to airdrop ${amount} TKN to ${address}`),
+    attempt: (amount: number, address: string) => logger.debug(`💸 Attempting to airdrop ${amount} TKN to ${address}`),
     success: (amount: number, address: string, txHash: string, gasUsed: string) => 
       logger.info(`✅ Airdrop successful: ${amount} TKN → ${address} (tx: ${txHash}, gas: ${gasUsed})`),
     failed: (address: string, error: string) => logger.error(`❌ Failed to airdrop to ${address}: ${error}`),
     batch: {
-      start: (count: number) => logger.info(`🚀 Processing airdrop batch of ${count} addresses`),
+      start: (count: number) => logger.debug(`🚀 Processing airdrop batch of ${count} addresses`),
       complete: (successful: number, failed: number, totalDistributed: number, stopped?: boolean) => 
         logger.info(`🎯 Batch processing complete: ${successful} successful, ${failed} failed, ${totalDistributed} TKN distributed${stopped ? ' (stopped due to insufficient funds)' : ''}`),
     },
@@ -58,22 +68,22 @@ export const logger = {
     insufficient: (ethBalance: number, tokenBalance: number) => 
       logger.warn(`⚠️  Insufficient wallet funds: ETH: ${ethBalance.toFixed(6)}, TKN: ${tokenBalance.toFixed(2)}`),
     ready: (ethBalance: number, tokenBalance: number) => 
-      logger.info(`💰 Wallet ready: ETH: ${ethBalance.toFixed(6)}, TKN: ${tokenBalance.toFixed(2)}`),
+      logger.debug(`💰 Wallet ready: ETH: ${ethBalance.toFixed(6)}, TKN: ${tokenBalance.toFixed(2)}`),
   },
   
   recovery: {
     start: () => logger.info('🔍 Checking for pending airdrop transactions...'),
     found: (count: number) => logger.info(`📋 Found ${count} pending transactions to recover`),
-    none: () => logger.info('✅ No pending transactions found'),
-    attempt: (address: string, amount: number) => logger.info(`🔄 Recovering transaction for ${address} (${amount} TKN)`),
+    none: () => logger.debug('✅ No pending transactions found'),
+    attempt: (address: string, amount: number) => logger.debug(`🔄 Recovering transaction for ${address} (${amount} TKN)`),
     success: (txHash: string) => logger.info(`✅ Recovered transaction: ${txHash}`),
     failed: (address: string, error: string) => logger.error(`❌ Failed to recover transaction for ${address}: ${error}`),
     complete: (recovered: number, failed: number, total: number) => 
       logger.info(`🎯 Recovery complete: ${recovered} recovered, ${failed} failed, ${total} total`),
     cleanup: {
-      start: () => logger.info('🧹 Starting cleanup of duplicate pending records...'),
-      found: (count: number) => logger.info(`📋 Found ${count} addresses with duplicate pending records`),
-      cleaned: (address: string, count: number) => logger.info(`✅ Cleaned up ${count} duplicate records for ${address}`),
+      start: () => logger.debug('🧹 Starting cleanup of duplicate pending records...'),
+      found: (count: number) => logger.debug(`📋 Found ${count} addresses with duplicate pending records`),
+      cleaned: (address: string, count: number) => logger.debug(`✅ Cleaned up ${count} duplicate records for ${address}`),
       complete: (cleaned: number, total: number) => logger.info(`🎯 Cleanup complete: ${cleaned} records cleaned, ${total} total duplicates found`),
     },
   },
@@ -85,8 +95,8 @@ export const logger = {
   },
   
   buffer: {
-    pause: (seconds: number) => logger.info(`⏳ Pausing scanning for ${seconds} seconds to respect buffer period...`),
-    waiting: (seconds: number) => logger.info(`⏳ Waiting ${seconds} seconds before next airdrop...`),
+    pause: (seconds: number) => logger.debug(`⏳ Pausing scanning for ${seconds} seconds to respect buffer period...`),
+    waiting: (seconds: number) => logger.debug(`⏳ Waiting ${seconds} seconds before next airdrop...`),
   },
   
   api: {

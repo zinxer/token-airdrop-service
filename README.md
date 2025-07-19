@@ -109,6 +109,9 @@ TOKEN_DECIMALS=18
 
 # Server
 PORT=3000
+
+# Logging
+LOG_LEVEL=info  # Options: debug, info, warn, error
 ```
 
 ### Airdrop Configuration
@@ -127,6 +130,33 @@ The system uses a database configuration that can be updated via API:
   maxRetries: 3,                 // Failed transaction retry limit
   currentConditionId: "eth_balance_range"  // Active condition
 }
+```
+
+### Logging Configuration
+
+The system supports configurable logging levels to control console output:
+
+```bash
+# Environment variable
+LOG_LEVEL=info  # Options: debug, info, warn, error
+```
+
+**Log Levels:**
+- `debug`: Most verbose - shows all scanning, API calls, and detailed progress
+- `info`: Default level - shows important events, eligible addresses, and successful airdrops
+- `warn`: Minimal - shows only warnings and errors
+- `error`: Silent - shows only errors
+
+**Usage:**
+```bash
+# For development (verbose logging)
+LOG_LEVEL=debug npm run dev
+
+# For production (minimal logging)
+LOG_LEVEL=warn npm start
+
+# For troubleshooting (errors only)
+LOG_LEVEL=error npm start
 ```
 
 ## 📡 API Endpoints
