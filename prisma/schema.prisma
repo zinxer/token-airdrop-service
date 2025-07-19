@@ -1,0 +1,47 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model AirdropHistory {
+  id           Int      @id @default(autoincrement())
+  address      String
+  amount       Int
+  timestamp    DateTime @default(now())
+  txHash       String?
+  status       String   @default("pending") // pending/completed/failed
+  errorMessage String?  @db.Text
+  blockNumber  BigInt? // Block where the address was found eligible
+  gasUsed      String? // Gas used for the transaction
+
+  @@index([address])
+  @@index([status])
+  @@index([timestamp])
+  @@map("airdrop_history")
+}
+
+model AirdropConfig {
+  id                  Int      @id @default(autoincrement())
+  isActive            Boolean  @default(false)
+  minEthBalance       String   @default("0.001") // Minimum ETH balance for eligibility
+  maxEthBalance       String   @default("0.01") // Maximum ETH balance for eligibility  
+  minTokenAmount        Int      @default(20) // Minimum TKN airdrop amount
+  maxTokenAmount        Int      @default(200) // Maximum TKN airdrop amount
+  minBufferSeconds    Int      @default(30) // Minimum seconds between airdrops
+  maxBufferSeconds    Int      @default(300) // Maximum seconds between airdrops
+  scanIntervalSeconds Int      @default(15) // How often to scan for new blocks
+  maxRetries          Int      @default(3) // Max retries for failed transactions
+  currentConditionId  String   @default("eth_balance_range") // Current condition being used
+  lastScannedBlock    BigInt? // Last block number that was scanned
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+
+  @@map("airdrop_config")
+}

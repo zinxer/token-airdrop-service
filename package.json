@@ -1,0 +1,57 @@
+{
+  "name": "token-airdrop-service",
+  "version": "1.0.0",
+  "description": "Acme Algorithmic Distribution Backend - ERC-20 token distribution system with anti-dump mechanisms",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon src/index.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:reset": "prisma migrate reset",
+    "prisma:studio": "prisma studio",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zinxer/token-airdrop-service.git"
+  },
+  "keywords": [
+    "acme",
+    "ethereum",
+    "airdrop",
+    "erc20",
+    "blockchain",
+    "distribution"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/zinxer/token-airdrop-service/issues"
+  },
+  "homepage": "https://github.com/zinxer/token-airdrop-service#readme",
+  "dependencies": {
+    "@prisma/client": "^6.12.0",
+    "alchemy-sdk": "^3.6.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "ethers": "^6.15.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "prisma": "^6.12.0",
+    "viem": "^2.32.0",
+    "winston": "^3.17.0",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.14",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.8.3"
+  }
+}
