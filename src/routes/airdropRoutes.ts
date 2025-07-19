@@ -6,7 +6,7 @@ import {
   isServiceRunning 
 } from '@/services/continuousAirdropService';
 import { checkWalletFunds } from '@/services/airdropEngine';
-import { getRecoveryStats, recoverPendingTransactions, cleanupDuplicatePendingRecords } from '@/services/transactionRecovery';
+import { getRecoveryStats, recoverPendingTransactions, cleanupDuplicatePendingRecords, cleanupStuckTransactions, getDetailedRecoveryStats } from '@/services/transactionRecovery';
 import { prisma } from '@/utils/prisma';
 import { makeJsonSafe } from '@/utils/json';
 
@@ -365,6 +365,55 @@ router.post('/recover', async (req: Request, res: Response) => {
     console.error('❌ Error during transaction recovery:', error);
     res.status(500).json({
       error: 'Failed to run transaction recovery',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * Clean up stuck transactions (pending for more than 5 minutes)
+ */
+router.post('/cleanup-stuck', async (req: Request, res: Response) => {
+  try {
+    if (isServiceRunning()) {
+      return res.status(400).json({
+        error: 'Cannot run cleanup while service is running. Please stop the service first.'
+      });
+    }
+
+    const result = await cleanupStuckTransactions();
+    
+    res.json({
+      success: true,
+      message: `Stuck transaction cleanup completed: ${result.cleaned} transactions cleaned up`,
+      result
+    });
+
+  } catch (error) {
+    console.error('❌ Error during stuck transaction cleanup:', error);
+    res.status(500).json({
+      error: 'Failed to clean up stuck transactions',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * Get detailed recovery statistics
+ */
+router.get('/recovery-stats', async (req: Request, res: Response) => {
+  try {
+    const stats = await getDetailedRecoveryStats();
+    
+    res.json({
+      success: true,
+      stats: makeJsonSafe(stats)
+    });
+
+  } catch (error) {
+    console.error('❌ Error getting recovery stats:', error);
+    res.status(500).json({
+      error: 'Failed to get recovery statistics',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }

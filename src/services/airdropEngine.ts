@@ -406,7 +406,7 @@ export async function processAirdropBatch(
     const amount = generateRandomTokenAmount(config.minTokenAmount, config.maxTokenAmount);
     
     // Add to the transaction queue instead of direct execution
-    addAirdropToQueue(address, amount, blockNumber);
+    await addAirdropToQueue(address, amount, blockNumber);
   }
 
   logger.airdrop.batch.complete(successful, failed, totalDistributed, stopped);

@@ -37,23 +37,27 @@ export function createEthBalanceCondition(config: ConditionConfig): EligibilityC
         };
       }
       
-      // Check if address has already received an airdrop
+      // Check if address has already received an airdrop or has a pending airdrop
       const existingAirdrop = await prisma.airdropHistory.findFirst({
         where: {
           address: address,
-          status: 'completed'
+          status: {
+            in: ['completed', 'pending']
+          }
         }
       });
       
       if (existingAirdrop) {
+        const statusText = existingAirdrop.status === 'completed' ? 'already received' : 'has pending';
         return {
           eligible: false,
-          reason: `Address already received airdrop on ${existingAirdrop.timestamp.toISOString()}`,
+          reason: `Address ${statusText} airdrop on ${existingAirdrop.timestamp.toISOString()}`,
           metadata: { 
             previousAirdrop: true, 
             previousAmount: existingAirdrop.amount,
             previousTxHash: existingAirdrop.txHash,
-            previousTimestamp: existingAirdrop.timestamp
+            previousTimestamp: existingAirdrop.timestamp,
+            previousStatus: existingAirdrop.status
           }
         };
       }

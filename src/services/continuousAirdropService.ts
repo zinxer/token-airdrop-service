@@ -166,7 +166,7 @@ export async function startContinuousAirdropService(): Promise<void> {
           
           for (const address of scanResult.eligibleAddresses) {
             const amount = Math.floor(Math.random() * (currentConfig.maxTokenAmount - currentConfig.minTokenAmount + 1)) + currentConfig.minTokenAmount;
-            addAirdropToQueue(address, amount, serviceState.currentBlock);
+            await addAirdropToQueue(address, amount, serviceState.currentBlock);
           }
 
           // Log queue status

@@ -15,7 +15,7 @@ export class AlchemyOptimized {
   private readonly MAX_CUS_PER_SECOND = 500; // Alchemy's limit
   private readonly CU_PER_REQUEST = 20; // Each getCode/getBalance consumes 20 CUs
   private readonly MAX_CONCURRENT_REQUESTS = 10; // Reduced from 25 to 10 for more conservative approach
-  private readonly SAFETY_BUFFER = 0.8; // Only use 80% of the limit to provide safety margin
+  private readonly SAFETY_BUFFER = 0.7; // Only use 80% of the limit to provide safety margin
 
   private constructor() {}
 

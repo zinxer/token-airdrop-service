@@ -6,8 +6,23 @@
 
 export type LogLevel = 'I' | 'D' | 'W' | 'E';
 
-// Log level configuration - set to 'I' for production, 'D' for development
-const LOG_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel) || 'I';
+// Log level configuration - map environment LOG_LEVEL to internal format
+const getLogLevel = (): LogLevel => {
+  const envLogLevel = process.env.LOG_LEVEL || 'info';
+  
+  // Map environment log levels to internal format
+  const levelMap: Record<string, LogLevel> = {
+    'debug': 'D',
+    'info': 'I', 
+    'warn': 'W',
+    'warning': 'W',
+    'error': 'E'
+  };
+  
+  return levelMap[envLogLevel.toLowerCase()] || 'I';
+};
+
+const LOG_LEVEL: LogLevel = getLogLevel();
 
 const shouldLog = (level: LogLevel): boolean => {
   const levels: Record<LogLevel, number> = { 'D': 0, 'I': 1, 'W': 2, 'E': 3 };

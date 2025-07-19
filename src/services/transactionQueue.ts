@@ -84,16 +84,37 @@ export function stopTransactionQueue(): void {
   queueState.isRunning = false;
 }
 
-export function addAirdropToQueue(address: string, amount: number, blockNumber: bigint): void {
+export async function addAirdropToQueue(address: string, amount: number, blockNumber: bigint): Promise<void> {
   if (!queueState.isRunning) {
     logger.warn('Transaction queue is not running. Cannot add to queue.');
     return;
   }
   
+  // Check if address is already in the queue
   const alreadyQueued = queueState.queue.some(item => item.address.toLowerCase() === address.toLowerCase());
   if (alreadyQueued) {
     logger.info(`Address ${address} is already in the queue.`);
     return;
+  }
+
+  // Additional database check to prevent duplicates
+  try {
+    const existingRecord = await prisma.airdropHistory.findFirst({
+      where: {
+        address: address,
+        status: {
+          in: ['pending', 'completed']
+        }
+      }
+    });
+
+    if (existingRecord) {
+      logger.info(`Address ${address} already has ${existingRecord.status} airdrop record (ID: ${existingRecord.id}). Skipping.`);
+      return;
+    }
+  } catch (error) {
+    logger.error(`Error checking existing airdrop records for ${address}: ${error}`);
+    // Continue with the airdrop if we can't check the database
   }
 
   queueState.queue.push({ address, amount, blockNumber });

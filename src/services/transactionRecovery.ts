@@ -221,3 +221,211 @@ export async function getRecoveryStats(): Promise<{
     return { pending: 0, completed: 0, failed: 0, total: 0 };
   }
 } 
+
+/**
+ * Clean up stuck transactions and provide detailed recovery information
+ */
+export async function cleanupStuckTransactions(): Promise<{
+  stuckTransactions: number;
+  cleaned: number;
+  errors: number;
+  details: Array<{
+    id: number;
+    address: string;
+    amount: number;
+    status: string;
+    timestamp: Date;
+    txHash?: string;
+    errorMessage?: string;
+  }>;
+}> {
+  try {
+    logger.recovery.cleanup.start();
+
+    // Find all pending transactions that are older than 5 minutes
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    
+    const stuckTransactions = await prisma.airdropHistory.findMany({
+      where: {
+        status: 'pending',
+        timestamp: {
+          lt: fiveMinutesAgo
+        }
+      },
+      orderBy: {
+        timestamp: 'asc'
+      }
+    });
+
+    if (stuckTransactions.length === 0) {
+      logger.info('No stuck transactions found');
+      return { 
+        stuckTransactions: 0, 
+        cleaned: 0, 
+        errors: 0, 
+        details: [] 
+      };
+    }
+
+    logger.recovery.cleanup.found(stuckTransactions.length);
+
+    let cleaned = 0;
+    let errors = 0;
+    const details: Array<{
+      id: number;
+      address: string;
+      amount: number;
+      status: string;
+      timestamp: Date;
+      txHash?: string;
+      errorMessage?: string;
+    }> = [];
+
+    for (const stuckTx of stuckTransactions) {
+      try {
+        // Mark as failed with appropriate error message
+        await prisma.airdropHistory.update({
+          where: { id: stuckTx.id },
+          data: {
+            status: 'failed',
+            errorMessage: 'Transaction stuck - no blockchain transaction was created or confirmed'
+          }
+        });
+
+        cleaned++;
+        details.push({
+          id: stuckTx.id,
+          address: stuckTx.address,
+          amount: stuckTx.amount,
+          status: 'failed',
+          timestamp: stuckTx.timestamp,
+          errorMessage: 'Transaction stuck - no blockchain transaction was created or confirmed'
+        });
+
+        logger.recovery.cleanup.cleaned(stuckTx.address, 1);
+      } catch (error) {
+        errors++;
+        logger.error(`Error cleaning up stuck transaction ${stuckTx.id}: ${error}`);
+        details.push({
+          id: stuckTx.id,
+          address: stuckTx.address,
+          amount: stuckTx.amount,
+          status: 'pending',
+          timestamp: stuckTx.timestamp,
+          errorMessage: `Cleanup error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        });
+      }
+    }
+
+    logger.recovery.cleanup.complete(cleaned, stuckTransactions.length);
+    return { 
+      stuckTransactions: stuckTransactions.length, 
+      cleaned, 
+      errors, 
+      details 
+    };
+
+  } catch (error) {
+    logger.error(`Error cleaning up stuck transactions: ${error}`);
+    return { 
+      stuckTransactions: 0, 
+      cleaned: 0, 
+      errors: 1, 
+      details: [] 
+    };
+  }
+}
+
+/**
+ * Get detailed statistics about airdrop history
+ */
+export async function getDetailedRecoveryStats(): Promise<{
+  pending: number;
+  completed: number;
+  failed: number;
+  total: number;
+  stuckTransactions: number;
+  duplicateAddresses: number;
+  recentActivity: Array<{
+    id: number;
+    address: string;
+    amount: number;
+    status: string;
+    timestamp: Date;
+    txHash?: string;
+  }>;
+}> {
+  try {
+    const [pending, completed, failed] = await Promise.all([
+      prisma.airdropHistory.count({ where: { status: 'pending' } }),
+      prisma.airdropHistory.count({ where: { status: 'completed' } }),
+      prisma.airdropHistory.count({ where: { status: 'failed' } })
+    ]);
+
+    // Find stuck transactions (pending for more than 5 minutes)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const stuckTransactions = await prisma.airdropHistory.count({
+      where: {
+        status: 'pending',
+        timestamp: {
+          lt: fiveMinutesAgo
+        }
+      }
+    });
+
+    // Find addresses with multiple records
+    const duplicateAddresses = await prisma.airdropHistory.groupBy({
+      by: ['address'],
+      _count: {
+        id: true
+      },
+      having: {
+        id: {
+          _count: {
+            gt: 1
+          }
+        }
+      }
+    });
+
+    // Get recent activity (last 10 records)
+    const recentActivity = await prisma.airdropHistory.findMany({
+      orderBy: {
+        timestamp: 'desc'
+      },
+      take: 10,
+      select: {
+        id: true,
+        address: true,
+        amount: true,
+        status: true,
+        timestamp: true,
+        txHash: true
+      }
+    }).then(records => records.map(record => ({
+      ...record,
+      txHash: record.txHash || undefined
+    })));
+
+    return {
+      pending,
+      completed,
+      failed,
+      total: pending + completed + failed,
+      stuckTransactions: stuckTransactions,
+      duplicateAddresses: duplicateAddresses.length,
+      recentActivity
+    };
+  } catch (error) {
+    logger.error(`Error getting detailed recovery stats: ${error}`);
+    return { 
+      pending: 0, 
+      completed: 0, 
+      failed: 0, 
+      total: 0, 
+      stuckTransactions: 0, 
+      duplicateAddresses: 0, 
+      recentActivity: [] 
+    };
+  }
+} 
