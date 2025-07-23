@@ -1,30 +1,33 @@
 import { loadConditionManager, reloadConditionManager } from '@/services/conditionManager';
 import { 
   scanBlockForEligibleAddresses, 
-  getStartingBlock, 
   getLatestBlockNumber,
-  updateLastScannedBlock 
 } from '@/services/blockScanner';
 import { checkWalletFunds } from '@/services/airdropEngine';
 import { recoverPendingTransactions } from '@/services/transactionRecovery';
 import { prisma } from '@/utils/prisma';
 import { logger } from '@/utils/logger';
 import { startTransactionQueue, stopTransactionQueue, addAirdropToQueue, getQueueStatus } from '@/services/transactionQueue';
+import { env } from '@/config/env';
 
 interface AirdropServiceState {
   isRunning: boolean;
-  currentBlock: bigint;
+  lastScannedBlock: bigint;
   totalDistributed: number;
   totalAddressesProcessed: number;
+  totalEligibleFound: number;
+  totalAirdropped: number;
   errors: number;
   startTime: Date;
 }
 
 let serviceState: AirdropServiceState = {
   isRunning: false,
-  currentBlock: 0n,
+  lastScannedBlock: 0n,
   totalDistributed: 0,
   totalAddressesProcessed: 0,
+  totalEligibleFound: 0,
+  totalAirdropped: 0,
   errors: 0,
   startTime: new Date()
 };
@@ -45,10 +48,14 @@ export async function startContinuousAirdropService(): Promise<void> {
   serviceState.totalDistributed = 0;
   serviceState.totalAddressesProcessed = 0;
   serviceState.errors = 0;
+  serviceState.totalEligibleFound = 0;
+  serviceState.totalAirdropped = 0;
 
   try {
     // Start the transaction queue
-    await startTransactionQueue();
+    if (!env.DRYRUN) {
+      await startTransactionQueue();
+    }
 
     // Load initial configuration and condition manager
     let conditionManager = await loadConditionManager();
@@ -79,7 +86,7 @@ export async function startContinuousAirdropService(): Promise<void> {
     }
     
     // Get starting block
-    serviceState.currentBlock = await getStartingBlock();
+    serviceState.lastScannedBlock = 0n;
     
     logger.service.status(
       `Service configuration:\n` +
@@ -87,8 +94,7 @@ export async function startContinuousAirdropService(): Promise<void> {
       `   • ETH Range: ${safeConfig.minEthBalance} - ${safeConfig.maxEthBalance}\n` +
       `   • TKN Range: ${safeConfig.minTokenAmount} - ${safeConfig.maxTokenAmount}\n` +
       `   • Buffer: ${safeConfig.minBufferSeconds} - ${safeConfig.maxBufferSeconds}s\n` +
-      `   • Scan Interval: ${safeConfig.scanIntervalSeconds}s\n` +
-      `   • Starting Block: ${serviceState.currentBlock}`
+      `   • Scan Interval: ${safeConfig.scanIntervalSeconds}s`
     );
 
     // Main scanning loop
@@ -138,62 +144,63 @@ export async function startContinuousAirdropService(): Promise<void> {
           continue;
         }
 
-        // Get latest block number
         const latestBlock = await getLatestBlockNumber();
-        
-        // If we're caught up, wait for new blocks
-        if (serviceState.currentBlock > latestBlock) {
-          logger.debug(`Caught up to latest block ${latestBlock}, waiting for new blocks...`);
+
+        if (latestBlock <= serviceState.lastScannedBlock) {
+          logger.debug(`Latest block ${latestBlock} has already been scanned. Waiting for next block...`);
           await new Promise(resolve => setTimeout(resolve, currentConfig.scanIntervalSeconds * 1000));
           continue;
         }
 
         // Scan current block for eligible addresses
-        logger.debug(`Scanning block ${serviceState.currentBlock}...`);
+        logger.debug(`Scanning latest block ${latestBlock}...`);
         
         const scanResult = await scanBlockForEligibleAddresses(
-          serviceState.currentBlock,
+          latestBlock,
           conditionManager,
           currentConfig.currentConditionId
         );
 
+        serviceState.lastScannedBlock = latestBlock;
         serviceState.totalAddressesProcessed += scanResult.scannedAddresses;
         serviceState.errors += scanResult.errors;
 
         // If we found eligible addresses, process airdrops
         if (scanResult.eligibleAddresses.length > 0) {
-          logger.info(`Found ${scanResult.eligibleAddresses.length} eligible addresses for airdrop`);
+          logger.info(`Found ${scanResult.eligibleAddresses.length} eligible addresses for airdrop in block ${latestBlock}`);
           
-          for (const address of scanResult.eligibleAddresses) {
-            const amount = Math.floor(Math.random() * (currentConfig.maxTokenAmount - currentConfig.minTokenAmount + 1)) + currentConfig.minTokenAmount;
-            await addAirdropToQueue(address, amount, serviceState.currentBlock);
+          if (env.DRYRUN) {
+            serviceState.totalEligibleFound += scanResult.eligibleAddresses.length;
+            console.log(`[DRY RUN] Total eligible addresses found so far: ${serviceState.totalEligibleFound}`);
+          } else {
+            for (const address of scanResult.eligibleAddresses) {
+              const amount = Math.floor(Math.random() * (currentConfig.maxTokenAmount - currentConfig.minTokenAmount + 1)) + currentConfig.minTokenAmount;
+              await addAirdropToQueue(address, amount, latestBlock);
+            }
           }
+        }
 
-          // Log queue status
+        // Update state from queue
+        if (!env.DRYRUN) {
           const queueStatus = getQueueStatus();
-          logger.debug(`Queue status: ${queueStatus.queueSize} pending, ${queueStatus.successful} successful, ${queueStatus.failed} failed.`);
+          serviceState.totalAirdropped = queueStatus.successful;
+          serviceState.totalDistributed = queueStatus.totalDistributed; 
         }
 
-        // Update last scanned block
-        await updateLastScannedBlock(serviceState.currentBlock);
-        
-        // Move to next block
-        serviceState.currentBlock++;
+        // Log progress 
+        const runtime = Math.round((Date.now() - serviceState.startTime.getTime()) / 1000);
+        logger.service.status(
+          `Service Status (${runtime}s runtime):\n` +
+          `   • Last Scanned Block: ${serviceState.lastScannedBlock}\n` +
+          `   • Total Distributed: ${serviceState.totalDistributed} TKN\n` +
+          `   • Airdropped Addresses: ${serviceState.totalAirdropped}\n` +
+          `   • Addresses Processed: ${serviceState.totalAddressesProcessed}\n` +
+          `   • Errors: ${serviceState.errors}`
+        );
 
-        // Log progress periodically (reduced frequency)
-        if (serviceState.currentBlock % 50n === 0n) {
-          const runtime = Math.round((Date.now() - serviceState.startTime.getTime()) / 1000);
-          logger.service.status(
-            `Service Status (${runtime}s runtime):\n` +
-            `   • Current Block: ${serviceState.currentBlock}\n` +
-            `   • Total Distributed: ${serviceState.totalDistributed} TKN\n` +
-            `   • Addresses Processed: ${serviceState.totalAddressesProcessed}\n` +
-            `   • Errors: ${serviceState.errors}`
-          );
-        }
-
-        // Small delay between blocks to be API-friendly
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait for the configured scan interval before scanning again
+        logger.debug(`Waiting ${currentConfig.scanIntervalSeconds} seconds for next scan.`);
+        await new Promise(resolve => setTimeout(resolve, currentConfig.scanIntervalSeconds * 1000));
 
       } catch (error) {
         serviceState.errors++;
@@ -211,7 +218,9 @@ export async function startContinuousAirdropService(): Promise<void> {
     serviceState.isRunning = false;
     
     // Stop the transaction queue
-    stopTransactionQueue();
+    if (!env.DRYRUN) {
+      stopTransactionQueue();
+    }
 
     // Update config to inactive
     try {
@@ -230,9 +239,11 @@ export async function startContinuousAirdropService(): Promise<void> {
     logger.service.status(
       `Continuous airdrop service stopped after ${runtime}s\n` +
       `   • Total Distributed: ${serviceState.totalDistributed} TKN\n` +
+      `   • Airdropped Addresses: ${serviceState.totalAirdropped}\n` +
       `   • Addresses Processed: ${serviceState.totalAddressesProcessed}\n` +
-      `   • Final Block: ${serviceState.currentBlock}\n` +
-      `   • Total Errors: ${serviceState.errors}`
+      `   • Final Block: ${serviceState.lastScannedBlock}\n` +
+      `   • Total Errors: ${serviceState.errors}` +
+      (env.DRYRUN ? `\n   • Total Eligible Found (DRY RUN): ${serviceState.totalEligibleFound}` : '')
     );
   }
 }
@@ -250,7 +261,9 @@ export async function stopContinuousAirdropService(): Promise<void> {
   serviceState.isRunning = false;
   
   // Stop the transaction queue
-  stopTransactionQueue();
+  if (!env.DRYRUN) {
+    stopTransactionQueue();
+  }
 
   // Update config to inactive
   try {
@@ -269,13 +282,13 @@ export async function stopContinuousAirdropService(): Promise<void> {
 /**
  * Get current service status
  */
-export function getServiceStatus(): Omit<AirdropServiceState, 'currentBlock'> & { currentBlock: string; runtime: number; queueStatus: any } {
+export function getServiceStatus(): Omit<AirdropServiceState, 'lastScannedBlock'> & { lastScannedBlock: string; runtime: number; queueStatus: any } {
   const runtime = Math.round((Date.now() - serviceState.startTime.getTime()) / 1000);
   return {
     ...serviceState,
-    currentBlock: serviceState.currentBlock.toString(), // Convert BigInt to string for JSON serialization
+    lastScannedBlock: serviceState.lastScannedBlock.toString(), // Convert BigInt to string for JSON serialization
     runtime,
-    queueStatus: getQueueStatus(),
+    queueStatus: env.DRYRUN ? { queueSize: 0, successful: 0, failed: 0, isRunning: false } : getQueueStatus(),
   };
 }
 

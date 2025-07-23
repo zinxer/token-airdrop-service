@@ -115,6 +115,16 @@ export async function checkWalletFunds(): Promise<{
   ready: boolean;
   error?: string;
 }> {
+  if (env.DRYRUN) {
+    logger.info('DRY RUN MODE: Bypassing wallet fund check.');
+    return {
+      hasEthForGas: true,
+      hasTokenForDistribution: true,
+      ethBalance: 999,
+      tokenBalance: 999999,
+      ready: true,
+    };
+  }
   try {
     // Validate contract initialization
     if (!tokenContract || !tokenContract.read || !tokenContract.read.balanceOf) {
@@ -222,6 +232,31 @@ export async function executeAirdrop(
   error?: string;
   gasUsed?: string;
 }> {
+  if (env.DRYRUN) {
+    logger.info(`[DRY RUN] Bypassing airdrop for ${address}`);
+    // Simulate a successful airdrop without actually sending a transaction
+    const mockTxHash = `0x-dry-run-success-${Date.now()}`;
+    // Log it to the database as 'completed' so it's not retried
+    try {
+      if (!recoveryMode) {
+        await prisma.airdropHistory.create({
+          data: {
+            address,
+            amount,
+            status: 'completed',
+            blockNumber,
+            txHash: mockTxHash,
+            gasUsed: '0',
+            errorMessage: 'DRY RUN',
+          },
+        });
+      }
+    } catch (dbError) {
+      logger.error(`[DRY RUN] Error logging mock airdrop record: ${dbError}`);
+    }
+    return { success: true, txHash: mockTxHash, gasUsed: '0' };
+  }
+
   let attempt = 0;
   let lastError = '';
 
@@ -365,51 +400,4 @@ export async function executeAirdropForRecovery(
   gasUsed?: string;
 }> {
   return executeAirdrop(address, amount, blockNumber, maxRetries, true, existingRecordId);
-}
-
-/**
- * Process a batch of eligible addresses for airdrop
- */
-export async function processAirdropBatch(
-  eligibleAddresses: string[],
-  blockNumber: bigint,
-  config: {
-    minTokenAmount: number;
-    maxTokenAmount: number;
-    minBufferSeconds: number;
-    maxBufferSeconds: number;
-    maxRetries: number;
-  }
-): Promise<{
-  successful: number;
-  failed: number;
-  totalDistributed: number;
-  stopped: boolean;
-}> {
-  let successful = 0;
-  let failed = 0;
-  let totalDistributed = 0;
-  let stopped = false;
-
-  logger.airdrop.batch.start(eligibleAddresses.length);
-
-  for (const address of eligibleAddresses) {
-    // Check wallet funds before each airdrop in a batch
-    const walletStatus = await checkWalletFunds();
-    if (!walletStatus.ready) {
-      logger.warn('Insufficient funds, stopping airdrop batch');
-      stopped = true;
-      break;
-    }
-
-    // Generate random amount and buffer time
-    const amount = generateRandomTokenAmount(config.minTokenAmount, config.maxTokenAmount);
-    
-    // Add to the transaction queue instead of direct execution
-    await addAirdropToQueue(address, amount, blockNumber);
-  }
-
-  logger.airdrop.batch.complete(successful, failed, totalDistributed, stopped);
-
-  return { successful, failed, totalDistributed, stopped };
 } 

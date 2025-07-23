@@ -70,7 +70,7 @@ export const logger = {
   airdrop: {
     attempt: (amount: number, address: string) => logger.debug(`💸 Attempting to airdrop ${amount} TKN to ${address}`),
     success: (amount: number, address: string, txHash: string, gasUsed: string) => 
-      logger.info(`✅ Airdrop successful: ${amount} TKN → ${address} (tx: ${txHash}, gas: ${gasUsed})`),
+      logger.info(`🪂 Airdrop successful: ${amount} TKN → ${address} (tx: ${txHash}, gas: ${gasUsed})`),
     failed: (address: string, error: string) => logger.error(`❌ Failed to airdrop to ${address}: ${error}`),
     batch: {
       start: (count: number) => logger.debug(`🚀 Processing airdrop batch of ${count} addresses`),

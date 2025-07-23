@@ -13,6 +13,7 @@ interface TransactionQueueState {
   queue: QueuedAirdrop[];
   successful: number;
   failed: number;
+  totalDistributed: number;
 }
 
 const queueState: TransactionQueueState = {
@@ -20,6 +21,7 @@ const queueState: TransactionQueueState = {
   queue: [],
   successful: 0,
   failed: 0,
+  totalDistributed: 0,
 };
 
 async function processQueue(): Promise<void> {
@@ -48,6 +50,7 @@ async function processQueue(): Promise<void> {
 
     if (result.success) {
       queueState.successful++;
+      queueState.totalDistributed += amount;
     } else {
       queueState.failed++;
     }
@@ -67,6 +70,7 @@ export async function startTransactionQueue(): Promise<void> {
   queueState.isRunning = true;
   queueState.successful = 0;
   queueState.failed = 0;
+  queueState.totalDistributed = 0;
 
   const interval = setInterval(async () => {
     if (!queueState.isRunning) {
@@ -127,5 +131,6 @@ export function getQueueStatus() {
     queueSize: queueState.queue.length,
     successful: queueState.successful,
     failed: queueState.failed,
+    totalDistributed: queueState.totalDistributed,
   };
 } 

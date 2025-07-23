@@ -2,6 +2,7 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex, PrivateKeyAccount } from 'viem';
+import { logger } from '../utils/logger';
 
 // Load environment variables
 dotenv.config();
@@ -9,7 +10,7 @@ dotenv.config();
 // Environment validation schema
 const envSchema = z.object({
   // Network Configuration
-  NETWORK: z.enum(['sepolia', 'mainnet']).default('sepolia'),
+  NETWORK: z.enum(['mainnet', 'sepolia']).default('sepolia'),
   
   // Alchemy API Configuration
   ALCHEMY_API_KEY: z.string().min(1, 'Alchemy API key is required'),
@@ -27,8 +28,8 @@ const envSchema = z.object({
   // MySQL queue system - no additional config needed beyond DATABASE_URL
   
   // TKN Token Configuration
-  TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid TKN token address format'),
-  TOKEN_DECIMALS: z.string().default('18').transform(val => parseInt(val, 10)).pipe(z.number().int().positive()),
+  TOKEN_ADDRESS: z.string().startsWith('0x'),
+  TOKEN_DECIMALS: z.coerce.number().int().positive(),
   
   // Airdrop Configuration
   MIN_AIRDROP_AMOUNT: z.string().default('20').transform(val => parseInt(val, 10)).pipe(z.number().int().positive()),
@@ -42,24 +43,14 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.string().default('100').transform(val => parseInt(val, 10)).pipe(z.number().int().positive()),
   
   // Logging
-  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  
+  // Dry Run Mode
+  DRYRUN: z.coerce.boolean().default(false),
 });
 
 // Validate environment variables
-let env: z.infer<typeof envSchema>;
-
-try {
-  env = envSchema.parse(process.env);
-} catch (error) {
-  if (error instanceof z.ZodError) {
-    console.error('❌ Environment validation failed:');
-    error.issues.forEach((issue) => {
-      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
-    });
-    process.exit(1);
-  }
-  throw error;
-}
+export const env = envSchema.parse(process.env);
 
 // Derive wallet address from private key
 let privateKey = env.DISTRIBUTION_WALLET_PRIVATE_KEY;
@@ -69,14 +60,20 @@ if (!privateKey.startsWith('0x')) {
 
 let account: PrivateKeyAccount;
 let DISTRIBUTION_WALLET_ADDRESS: string;
+
 try {
   account = privateKeyToAccount(privateKey as Hex);
   DISTRIBUTION_WALLET_ADDRESS = account.address;
-  console.log(`ℹ️  Distribution wallet address: ${DISTRIBUTION_WALLET_ADDRESS}`);
 } catch (error) {
-  console.error('❌ Failed to derive wallet address from private key:', error);
+  logger.error('Failed to derive wallet address from private key. Make sure the private key is correct.');
   process.exit(1);
 }
+
+// Log the wallet address on startup
+if (env.DRYRUN) {
+  logger.info(`DRY RUN MODE ENABLED`);
+}
+logger.info(`Distributor wallet address: ${DISTRIBUTION_WALLET_ADDRESS}`);
 
 // Additional validation
 if (env.MIN_AIRDROP_AMOUNT >= env.MAX_AIRDROP_AMOUNT) {
@@ -101,4 +98,4 @@ if (env.NETWORK === 'mainnet') {
   console.log(`ℹ️  Running on ${env.NETWORK.toUpperCase()} testnet`);
 }
 
-export { env, account, DISTRIBUTION_WALLET_ADDRESS }; 
+export { account, DISTRIBUTION_WALLET_ADDRESS }; 

@@ -48,85 +48,94 @@ export async function scanBlockForEligibleAddresses(
       }
     }
 
-    // Limit the number of addresses to process to prevent CU overload
-    const addresses = Array.from(uniqueAddresses).slice(0, MAX_ADDRESSES_PER_BLOCK);
-    
-    if (addresses.length < uniqueAddresses.size) {
-      logger.warn(`Block ${blockNumber} has ${uniqueAddresses.size} addresses, limiting to ${MAX_ADDRESSES_PER_BLOCK} to prevent CU overload`);
+    // Process all addresses in batches to avoid CU overload
+    const allAddresses = Array.from(uniqueAddresses);
+    if (allAddresses.length > MAX_ADDRESSES_PER_BLOCK) {
+      logger.info(
+        `Block ${blockNumber} has ${allAddresses.length} addresses, processing in batches of ${MAX_ADDRESSES_PER_BLOCK}.`
+      );
     }
-
-    logger.debug(`Found ${addresses.length} unique addresses in block ${blockNumber} (limited from ${uniqueAddresses.size})`);
 
     const eligibleAddresses: string[] = [];
+    let totalScannedAddresses = 0;
     let errors = 0;
 
-    // Batch get code for all addresses to check for contracts
-    logger.debug(`Getting contract code for ${addresses.length} addresses...`);
-    const codeMap = await alchemyOptimized.getCodeBatch(addresses);
-    
-    // Add delay after large batch operation
-    if (addresses.length > 10) {
-      logger.debug(`Waiting ${BATCH_DELAY_MS}ms after code batch to respect rate limits...`);
-      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-    }
-    
-    // Filter out contract addresses
-    const userAddresses = addresses.filter(address => {
-      const code = codeMap.get(address);
-      if (code && code !== '0x') {
-        logger.blockchain.contract(address);
-        return false;
-      }
-      return true;
-    });
+    for (let i = 0; i < allAddresses.length; i += MAX_ADDRESSES_PER_BLOCK) {
+      const addressBatch = allAddresses.slice(i, i + MAX_ADDRESSES_PER_BLOCK);
+      const batchNum = i / MAX_ADDRESSES_PER_BLOCK + 1;
+      const totalBatches = Math.ceil(allAddresses.length / MAX_ADDRESSES_PER_BLOCK);
 
-    logger.debug(`Filtered to ${userAddresses.length} user addresses (excluded ${addresses.length - userAddresses.length} contracts)`);
+      logger.debug(`Processing batch ${batchNum} of ${totalBatches} with ${addressBatch.length} addresses...`);
 
-    // Batch get balances for all user addresses
-    if (userAddresses.length > 0) {
-      logger.debug(`Getting balances for ${userAddresses.length} user addresses...`);
-      const balanceMap = await alchemyOptimized.getBalanceBatch(userAddresses);
-      
+      // Batch get code for all addresses to check for contracts
+      logger.debug(`Getting contract code for ${addressBatch.length} addresses...`);
+      const codeMap = await alchemyOptimized.getCodeBatch(addressBatch);
+
       // Add delay after large batch operation
-      if (userAddresses.length > 10) {
-        logger.debug(`Waiting ${BATCH_DELAY_MS}ms after balance batch to respect rate limits...`);
+      if (addressBatch.length > 10) {
+        logger.debug(`Waiting ${BATCH_DELAY_MS}ms after code batch to respect rate limits...`);
         await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
 
-      // Check each address for eligibility
-      for (const address of userAddresses) {
-        try {
-          const balanceHex = balanceMap.get(address);
-          if (!balanceHex) {
-            logger.warn(`No balance found for address ${address}`);
-            continue;
+      // Filter out contract addresses
+      const userAddresses = addressBatch.filter(address => {
+        const code = codeMap.get(address);
+        if (code && code !== '0x') {
+          logger.blockchain.contract(address);
+          return false;
+        }
+        return true;
+      });
+
+      logger.debug(`Filtered to ${userAddresses.length} user addresses in batch ${batchNum} (excluded ${addressBatch.length - userAddresses.length} contracts)`);
+
+      // Batch get balances for all user addresses
+      if (userAddresses.length > 0) {
+        logger.debug(`Getting balances for ${userAddresses.length} user addresses...`);
+        const balanceMap = await alchemyOptimized.getBalanceBatch(userAddresses);
+
+        // Add delay after large batch operation
+        if (userAddresses.length > 10) {
+          logger.debug(`Waiting ${BATCH_DELAY_MS}ms after balance batch to respect rate limits...`);
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+        }
+
+        // Check each address for eligibility
+        for (const address of userAddresses) {
+          try {
+            const balanceHex = balanceMap.get(address);
+            if (!balanceHex) {
+              logger.warn(`No balance found for address ${address}`);
+              continue;
+            }
+
+            const ethBalance = Utils.formatEther(balanceHex);
+
+            // Check eligibility using condition manager
+            const eligibilityResult = await conditionManager.checkEligibility(
+              address,
+              ethBalance,
+              blockNumber,
+              currentConditionId
+            );
+
+            if (eligibilityResult.eligible) {
+              eligibleAddresses.push(address);
+              logger.blockchain.eligible(address, parseFloat(ethBalance).toFixed(6), eligibilityResult.reason);
+            }
+          } catch (error) {
+            errors++;
+            logger.blockchain.error(address, error);
           }
-
-          const ethBalance = Utils.formatEther(balanceHex);
-
-          // Check eligibility using condition manager
-          const eligibilityResult = await conditionManager.checkEligibility(
-            address,
-            ethBalance,
-            blockNumber,
-            currentConditionId
-          );
-
-          if (eligibilityResult.eligible) {
-            eligibleAddresses.push(address);
-            logger.blockchain.eligible(address, parseFloat(ethBalance).toFixed(6), eligibilityResult.reason);
-          }
-        } catch (error) {
-          errors++;
-          logger.blockchain.error(address, error);
         }
       }
+      totalScannedAddresses += userAddresses.length;
     }
 
-    logger.blockchain.found(eligibleAddresses.length, userAddresses.length);
+    logger.blockchain.found(eligibleAddresses.length, totalScannedAddresses);
 
     return {
-      scannedAddresses: userAddresses.length,
+      scannedAddresses: totalScannedAddresses,
       eligibleAddresses,
       errors
     };
@@ -150,52 +159,5 @@ export async function getLatestBlockNumber(): Promise<bigint> {
   } catch (error) {
     logger.error(`Error getting latest block number: ${error}`);
     throw error;
-  }
-}
-
-/**
- * Update last scanned block in database
- */
-export async function updateLastScannedBlock(blockNumber: bigint): Promise<void> {
-  try {
-    const config = await prisma.airdropConfig.findFirst();
-    if (config) {
-      await prisma.airdropConfig.update({
-        where: { id: config.id },
-        data: { lastScannedBlock: blockNumber }
-      });
-    }
-  } catch (error) {
-    logger.error(`Error updating last scanned block: ${error}`);
-  }
-}
-
-/**
- * Get last scanned block from database
- */
-export async function getLastScannedBlock(): Promise<bigint | null> {
-  try {
-    const config = await prisma.airdropConfig.findFirst();
-    return config?.lastScannedBlock ? BigInt(config.lastScannedBlock) : null;
-  } catch (error) {
-    logger.error(`Error getting last scanned block: ${error}`);
-    return null;
-  }
-}
-
-/**
- * Determine starting block for scanning
- */
-export async function getStartingBlock(): Promise<bigint> {
-  const lastScanned = await getLastScannedBlock();
-  
-  if (lastScanned) {
-    // Resume from next block after last scanned
-    return lastScanned + 1n;
-  } else {
-    // Start from current block if no previous scan
-    const currentBlock = await getLatestBlockNumber();
-    logger.info(`Starting fresh scan from block ${currentBlock}`);
-    return currentBlock;
   }
 } 

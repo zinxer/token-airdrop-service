@@ -304,7 +304,7 @@ Example log output:
 ✅ Eligible address found: 0xabc...123 (0.005678 ETH) - ETH balance in valid range
 💸 Attempting to airdrop 87 TKN to 0xabc...123
 📡 Transaction sent: 0xdef456... (attempt 1)
-✅ Airdrop successful: 87 TKN → 0xabc...123 (tx: 0xdef456..., gas: 21000)
+🪂 Airdrop successful: 87 TKN → 0xabc...123 (tx: 0xdef456..., gas: 21000)
 ⏳ Waiting 127 seconds before next airdrop...
 ```
 
