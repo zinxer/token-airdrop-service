@@ -105,7 +105,8 @@ export async function loadConditionManager(): Promise<ConditionManager> {
         maxTokenAmount: 200,
         minBufferSeconds: 30,
         maxBufferSeconds: 300,
-        scanIntervalSeconds: 15,
+        minScanIntervalSeconds: 10,
+        maxScanIntervalSeconds: 20,
         maxRetries: 3,
         currentConditionId: "eth_balance_range"
       }

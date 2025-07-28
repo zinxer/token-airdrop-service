@@ -126,7 +126,8 @@ The system uses a database configuration that can be updated via API:
   maxTokenAmount: 200,             // Maximum TKN airdrop amount
   minBufferSeconds: 30,          // Minimum delay between airdrops
   maxBufferSeconds: 300,         // Maximum delay between airdrops
-  scanIntervalSeconds: 15,       // Block scanning frequency
+  minScanIntervalSeconds: 10,    // Minimum block scanning frequency
+  maxScanIntervalSeconds: 20,    // Maximum block scanning frequency
   maxRetries: 3,                 // Failed transaction retry limit
   currentConditionId: "eth_balance_range"  // Active condition
 }

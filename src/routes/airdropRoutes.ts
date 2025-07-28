@@ -137,7 +137,8 @@ router.get('/status', async (req: Request, res: Response) => {
         maxTokenAmount: config.maxTokenAmount,
         minBufferSeconds: config.minBufferSeconds,
         maxBufferSeconds: config.maxBufferSeconds,
-        scanIntervalSeconds: config.scanIntervalSeconds,
+        minScanIntervalSeconds: config.minScanIntervalSeconds,
+        maxScanIntervalSeconds: config.maxScanIntervalSeconds,
         currentConditionId: config.currentConditionId,
         lastScannedBlock: config.lastScannedBlock?.toString()
       },
@@ -168,7 +169,8 @@ router.put('/config', async (req: Request, res: Response) => {
       maxTokenAmount,
       minBufferSeconds,
       maxBufferSeconds,
-      scanIntervalSeconds,
+      minScanIntervalSeconds,
+      maxScanIntervalSeconds,
       currentConditionId
     } = req.body;
 
@@ -188,7 +190,8 @@ router.put('/config', async (req: Request, res: Response) => {
         ...(maxTokenAmount !== undefined && { maxTokenAmount }),
         ...(minBufferSeconds !== undefined && { minBufferSeconds }),
         ...(maxBufferSeconds !== undefined && { maxBufferSeconds }),
-        ...(scanIntervalSeconds !== undefined && { scanIntervalSeconds }),
+        ...(minScanIntervalSeconds !== undefined && { minScanIntervalSeconds }),
+        ...(maxScanIntervalSeconds !== undefined && { maxScanIntervalSeconds }),
         ...(currentConditionId !== undefined && { currentConditionId })
       }
     });

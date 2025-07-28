@@ -36,7 +36,8 @@ model AirdropConfig {
   maxTokenAmount        Int      @default(200) // Maximum TKN airdrop amount
   minBufferSeconds    Int      @default(30) // Minimum seconds between airdrops
   maxBufferSeconds    Int      @default(300) // Maximum seconds between airdrops
-  scanIntervalSeconds Int      @default(15) // How often to scan for new blocks
+  minScanIntervalSeconds Int   @default(10) // Minimum seconds between scans
+  maxScanIntervalSeconds Int   @default(20) // Maximum seconds between scans
   maxRetries          Int      @default(3) // Max retries for failed transactions
   currentConditionId  String   @default("eth_balance_range") // Current condition being used
   lastScannedBlock    BigInt? // Last block number that was scanned

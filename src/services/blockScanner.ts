@@ -48,11 +48,16 @@ export async function scanBlockForEligibleAddresses(
       }
     }
 
-    // Process all addresses in batches to avoid CU overload
+    // Convert to array and shuffle for random selection
     const allAddresses = Array.from(uniqueAddresses);
+    const shuffledAddresses = allAddresses.sort(() => Math.random() - 0.5);
+    
+    // Process only up to MAX_ADDRESSES_PER_BLOCK for faster processing
+    const addressesToProcess = shuffledAddresses.slice(0, MAX_ADDRESSES_PER_BLOCK);
+    
     if (allAddresses.length > MAX_ADDRESSES_PER_BLOCK) {
       logger.info(
-        `Block ${blockNumber} has ${allAddresses.length} addresses, processing in batches of ${MAX_ADDRESSES_PER_BLOCK}.`
+        `Block ${blockNumber} has ${allAddresses.length} unique addresses, processing ${addressesToProcess.length} randomly selected addresses for speed optimization.`
       );
     }
 
@@ -60,10 +65,11 @@ export async function scanBlockForEligibleAddresses(
     let totalScannedAddresses = 0;
     let errors = 0;
 
-    for (let i = 0; i < allAddresses.length; i += MAX_ADDRESSES_PER_BLOCK) {
-      const addressBatch = allAddresses.slice(i, i + MAX_ADDRESSES_PER_BLOCK);
+    // Process addresses in batches (but now limited to 50 total)
+    for (let i = 0; i < addressesToProcess.length; i += MAX_ADDRESSES_PER_BLOCK) {
+      const addressBatch = addressesToProcess.slice(i, i + MAX_ADDRESSES_PER_BLOCK);
       const batchNum = i / MAX_ADDRESSES_PER_BLOCK + 1;
-      const totalBatches = Math.ceil(allAddresses.length / MAX_ADDRESSES_PER_BLOCK);
+      const totalBatches = Math.ceil(addressesToProcess.length / MAX_ADDRESSES_PER_BLOCK);
 
       logger.debug(`Processing batch ${batchNum} of ${totalBatches} with ${addressBatch.length} addresses...`);
 

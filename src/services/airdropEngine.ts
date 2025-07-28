@@ -300,7 +300,7 @@ export async function executeAirdrop(
         blockTag: 'pending',
       });
       
-      logger.info(`Using nonce ${nonce} for transaction to ${address}`);
+      logger.debug(`Using nonce ${nonce} for transaction to ${address}`);
 
       const { request } = await publicClient.simulateContract({
         account: walletClient.account,

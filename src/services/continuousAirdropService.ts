@@ -94,7 +94,7 @@ export async function startContinuousAirdropService(): Promise<void> {
       `   • ETH Range: ${safeConfig.minEthBalance} - ${safeConfig.maxEthBalance}\n` +
       `   • TKN Range: ${safeConfig.minTokenAmount} - ${safeConfig.maxTokenAmount}\n` +
       `   • Buffer: ${safeConfig.minBufferSeconds} - ${safeConfig.maxBufferSeconds}s\n` +
-      `   • Scan Interval: ${safeConfig.scanIntervalSeconds}s`
+      `   • Scan Interval: ${safeConfig.minScanIntervalSeconds}s - ${safeConfig.maxScanIntervalSeconds}s`
     );
 
     // Main scanning loop
@@ -148,7 +148,8 @@ export async function startContinuousAirdropService(): Promise<void> {
 
         if (latestBlock <= serviceState.lastScannedBlock) {
           logger.debug(`Latest block ${latestBlock} has already been scanned. Waiting for next block...`);
-          await new Promise(resolve => setTimeout(resolve, currentConfig.scanIntervalSeconds * 1000));
+          const scanInterval = (Math.floor(Math.random() * (currentConfig.maxScanIntervalSeconds - currentConfig.minScanIntervalSeconds + 1)) + currentConfig.minScanIntervalSeconds) * 1000;
+          await new Promise(resolve => setTimeout(resolve, scanInterval));
           continue;
         }
 
@@ -199,8 +200,9 @@ export async function startContinuousAirdropService(): Promise<void> {
         );
 
         // Wait for the configured scan interval before scanning again
-        logger.debug(`Waiting ${currentConfig.scanIntervalSeconds} seconds for next scan.`);
-        await new Promise(resolve => setTimeout(resolve, currentConfig.scanIntervalSeconds * 1000));
+        const scanInterval = (Math.floor(Math.random() * (currentConfig.maxScanIntervalSeconds - currentConfig.minScanIntervalSeconds + 1)) + currentConfig.minScanIntervalSeconds) * 1000;
+        logger.debug(`Waiting ${scanInterval / 1000} seconds for next scan.`);
+        await new Promise(resolve => setTimeout(resolve, scanInterval));
 
       } catch (error) {
         serviceState.errors++;
