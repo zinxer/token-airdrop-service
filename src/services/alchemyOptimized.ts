@@ -16,6 +16,7 @@ export class AlchemyOptimized {
   private readonly CU_PER_REQUEST = 20; // Each getCode/getBalance consumes 20 CUs
   private readonly MAX_CONCURRENT_REQUESTS = 10; // Reduced from 25 to 10 for more conservative approach
   private readonly SAFETY_BUFFER = 0.7; // Only use 80% of the limit to provide safety margin
+  private isWaitingForCULimit = false; // Lock to prevent multiple waiters
 
   private constructor() {}
 
@@ -75,11 +76,22 @@ export class AlchemyOptimized {
    */
   private async waitForCULimit(): Promise<void> {
     while (!this.canMakeRequest()) {
-      const waitTime = 1000 - (Date.now() - this.cuResetTime);
-      if (waitTime > 0) {
-        const safeLimit = Math.floor(this.MAX_CUS_PER_SECOND * this.SAFETY_BUFFER);
-        logger.debug(`CU limit reached (${this.currentCUsUsed}/${safeLimit}), waiting ${waitTime}ms for reset`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+      if (this.isWaitingForCULimit) {
+        // Another request is already waiting, so we'll just wait a bit and retry
+        await new Promise(resolve => setTimeout(resolve, 50));
+        continue;
+      }
+
+      try {
+        this.isWaitingForCULimit = true;
+        const waitTime = 1000 - (Date.now() - this.cuResetTime);
+        if (waitTime > 0) {
+          const safeLimit = Math.floor(this.MAX_CUS_PER_SECOND * this.SAFETY_BUFFER);
+          logger.debug(`CU limit reached (${this.currentCUsUsed}/${safeLimit}), waiting ${waitTime}ms for reset`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      } finally {
+        this.isWaitingForCULimit = false;
       }
     }
   }

@@ -1,11 +1,7 @@
 import { z } from 'zod';
-import dotenv from 'dotenv';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex, PrivateKeyAccount } from 'viem';
 import { logger } from '../utils/logger';
-
-// Load environment variables
-dotenv.config();
 
 // Environment validation schema
 const envSchema = z.object({
