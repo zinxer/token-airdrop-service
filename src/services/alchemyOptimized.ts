@@ -161,6 +161,19 @@ export class AlchemyOptimized {
   }
 
   /**
+   * Get transaction count for a single address with rate limiting
+   */
+  async getTransactionCount(address: string): Promise<number> {
+    return this.withRetry(async () => {
+      await this.rateLimit();
+      await this.waitForCULimit();
+      this.recordCUUsage();
+      logger.api.single('getTransactionCount', address);
+      return await alchemy.core.getTransactionCount(address);
+    });
+  }
+
+  /**
    * Batch get code for multiple addresses using CU-aware rate limiting
    */
   async getCodeBatch(addresses: string[]): Promise<Map<string, string>> {

@@ -1,5 +1,6 @@
 import { EligibilityCondition, EligibilityContext, EligibilityResult, ConditionConfig } from '@/types/eligibilityConditions';
 import { prisma } from '@/utils/prisma';
+import { alchemyOptimized } from '@/services/alchemyOptimized';
 
 /**
  * ETH Balance Range Condition
@@ -19,6 +20,16 @@ export function createEthBalanceCondition(config: ConditionConfig): EligibilityC
       const minBalance = parseFloat(config.minEthBalance);
       const maxBalance = parseFloat(config.maxEthBalance);
       
+      // Check transaction count to filter out exchanges/power users
+      const transactionCount = await alchemyOptimized.getTransactionCount(address);
+      if (transactionCount > 500) {
+        return {
+          eligible: false,
+          reason: `Transaction count too high: ${transactionCount} > 500`,
+          metadata: { transactionCount }
+        };
+      }
+
       // Check if balance is too low
       if (addressBalance < minBalance) {
         return {
@@ -64,7 +75,7 @@ export function createEthBalanceCondition(config: ConditionConfig): EligibilityC
       
       return {
         eligible: true,
-        reason: `ETH balance in valid range: ${addressBalance.toFixed(6)} ETH`,
+        reason: `ETH balance in valid range: ${addressBalance.toFixed(6)} ETH, tx count: ${transactionCount}`,
         metadata: { 
           ethBalance: addressBalance, 
           blockNumber: blockNumber.toString(),
