@@ -185,7 +185,7 @@ export async function checkWalletFunds(): Promise<{
     const ethBalanceFormatted = parseFloat(formatUnits(ethBalance, 18));
     const tokenBalanceFormatted = parseFloat(formatUnits(tokenBalance as bigint, env.TOKEN_DECIMALS));
     
-    const hasEthForGas = ethBalanceFormatted > 0.01; // Need at least 0.01 ETH for gas
+    const hasEthForGas = ethBalanceFormatted > 0.001; // Need at least 0.01 ETH for gas
     const hasTokenForDistribution = tokenBalanceFormatted > 0; // Need some TKN
     const ready = hasEthForGas && hasTokenForDistribution;
     
