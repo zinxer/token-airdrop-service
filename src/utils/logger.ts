@@ -68,8 +68,8 @@ export const logger = {
   },
   
   airdrop: {
-    attempt: (amount: number, address: string) => logger.debug(`💸 Attempting to airdrop ${amount} TKN to ${address}`),
-    success: (amount: number, address: string, txHash: string, gasUsed: string) => 
+    attempt: (amount: string, address: string) => logger.debug(`💸 Attempting to airdrop ${amount} TKN to ${address}`),
+    success: (amount: string, address: string, txHash: string, gasUsed: string) => 
       logger.info(`🪂 Airdrop successful: ${amount} TKN → ${address} (tx: ${txHash}, gas: ${gasUsed})`),
     failed: (address: string, error: string) => logger.error(`❌ Failed to airdrop to ${address}: ${error}`),
     batch: {
@@ -90,7 +90,7 @@ export const logger = {
     start: () => logger.info('🔍 Checking for pending airdrop transactions...'),
     found: (count: number) => logger.info(`📋 Found ${count} pending transactions to recover`),
     none: () => logger.debug('✅ No pending transactions found'),
-    attempt: (address: string, amount: number) => logger.debug(`🔄 Recovering transaction for ${address} (${amount} TKN)`),
+    attempt: (address: string, amount: string) => logger.debug(`🔄 Recovering transaction for ${address} (${amount} TKN)`),
     success: (txHash: string) => logger.info(`✅ Recovered transaction: ${txHash}`),
     failed: (address: string, error: string) => logger.error(`❌ Failed to recover transaction for ${address}: ${error}`),
     complete: (recovered: number, failed: number, total: number) => 

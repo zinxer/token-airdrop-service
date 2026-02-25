@@ -27,13 +27,13 @@ export interface EligibilityCondition {
 }
 
 export interface AirdropAmount {
-  min: number;
-  max: number;
+  min: string;
+  max: string;
 }
 
 export interface ConditionConfig {
   minEthBalance: string;
   maxEthBalance: string;
-  minTokenAmount: number;
-  maxTokenAmount: number;
+  minTokenAmount: string;
+  maxTokenAmount: string;
 } 

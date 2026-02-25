@@ -238,11 +238,27 @@ router.get('/history', async (req: Request, res: Response) => {
       prisma.airdropHistory.count({ where })
     ]);
 
+    // Get summary statistics by status
     const summary = await prisma.airdropHistory.groupBy({
       by: ['status'],
-      _sum: { amount: true },
       _count: true
     });
+
+    // Calculate total amounts manually since amount is now a string
+    const summaryWithAmounts = await Promise.all(
+      summary.map(async (item) => {
+        const records = await prisma.airdropHistory.findMany({
+          where: { status: item.status },
+          select: { amount: true }
+        });
+        const totalAmount = records.reduce((sum, record) => sum + parseFloat(record.amount || '0'), 0);
+        return {
+          status: item.status,
+          count: item._count,
+          totalAmount
+        };
+      })
+    );
 
     res.json({
       success: true,
@@ -254,10 +270,10 @@ router.get('/history', async (req: Request, res: Response) => {
           total,
           pages: Math.ceil(total / limit)
         },
-        summary: summary.reduce((acc, item) => {
+        summary: summaryWithAmounts.reduce((acc, item) => {
           acc[item.status] = {
-            count: item._count,
-            totalAmount: item._sum.amount || 0
+            count: item.count,
+            totalAmount: item.totalAmount
           };
           return acc;
         }, {} as Record<string, { count: number; totalAmount: number }>)

@@ -3,7 +3,7 @@ import {
   scanBlockForEligibleAddresses, 
   getLatestBlockNumber,
 } from '@/services/blockScanner';
-import { checkWalletFunds } from '@/services/airdropEngine';
+import { checkWalletFunds, checkGasPrice } from '@/services/airdropEngine';
 import { recoverPendingTransactions } from '@/services/transactionRecovery';
 import { prisma } from '@/utils/prisma';
 import { logger } from '@/utils/logger';
@@ -93,6 +93,7 @@ export async function startContinuousAirdropService(): Promise<void> {
       `   • Condition: ${safeConfig.currentConditionId}\n` +
       `   • ETH Range: ${safeConfig.minEthBalance} - ${safeConfig.maxEthBalance}\n` +
       `   • TKN Range: ${safeConfig.minTokenAmount} - ${safeConfig.maxTokenAmount}\n` +
+      `   • Max Gas Price: ${safeConfig.maxGasPrice} gwei\n` +
       `   • Buffer: ${safeConfig.minBufferSeconds} - ${safeConfig.maxBufferSeconds}s\n` +
       `   • Scan Interval: ${safeConfig.minScanIntervalSeconds}s - ${safeConfig.maxScanIntervalSeconds}s`
     );
@@ -118,6 +119,7 @@ export async function startContinuousAirdropService(): Promise<void> {
             config.maxEthBalance !== currentConfig.maxEthBalance ||
             config.minTokenAmount !== currentConfig.minTokenAmount ||
             config.maxTokenAmount !== currentConfig.maxTokenAmount ||
+            config.maxGasPrice !== currentConfig.maxGasPrice ||
             config.currentConditionId !== currentConfig.currentConditionId) {
           
           logger.info('Configuration changed, reloading condition manager...');
@@ -131,7 +133,8 @@ export async function startContinuousAirdropService(): Promise<void> {
             `Updated configuration:\n` +
             `   • Condition: ${currentConfig.currentConditionId}\n` +
             `   • ETH Range: ${currentConfig.minEthBalance} - ${currentConfig.maxEthBalance}\n` +
-            `   • TKN Range: ${currentConfig.minTokenAmount} - ${currentConfig.maxTokenAmount}`
+            `   • TKN Range: ${currentConfig.minTokenAmount} - ${currentConfig.maxTokenAmount}\n` +
+            `   • Max Gas Price: ${currentConfig.maxGasPrice} gwei`
           );
         }
 
@@ -141,6 +144,16 @@ export async function startContinuousAirdropService(): Promise<void> {
           logger.wallet.insufficient(walletStatus.ethBalance, walletStatus.tokenBalance);
           logger.info('Waiting 60 seconds before checking again...');
           await new Promise(resolve => setTimeout(resolve, 60000));
+          continue;
+        }
+
+        // Check gas price before scanning
+        const gasCheck = await checkGasPrice(currentConfig.maxGasPrice);
+        if (!gasCheck.acceptable) {
+          logger.warn(`Gas price too high (${gasCheck.currentGasPrice.toFixed(2)} gwei > ${gasCheck.maxGasPrice} gwei). Waiting before next check...`);
+          // Wait for a scan interval before checking again
+          const scanInterval = (Math.floor(Math.random() * (currentConfig.maxScanIntervalSeconds - currentConfig.minScanIntervalSeconds + 1)) + currentConfig.minScanIntervalSeconds) * 1000;
+          await new Promise(resolve => setTimeout(resolve, scanInterval));
           continue;
         }
 
@@ -174,9 +187,23 @@ export async function startContinuousAirdropService(): Promise<void> {
             serviceState.totalEligibleFound += scanResult.eligibleAddresses.length;
             console.log(`[DRY RUN] Total eligible addresses found so far: ${serviceState.totalEligibleFound}`);
           } else {
-            for (const address of scanResult.eligibleAddresses) {
-              const amount = Math.floor(Math.random() * (currentConfig.maxTokenAmount - currentConfig.minTokenAmount + 1)) + currentConfig.minTokenAmount;
+            // Add all eligible addresses to queue with buffer delays
+            for (let i = 0; i < scanResult.eligibleAddresses.length; i++) {
+              const address = scanResult.eligibleAddresses[i];
+              // Generate random decimal amount
+              const min = parseFloat(currentConfig.minTokenAmount);
+              const max = parseFloat(currentConfig.maxTokenAmount);
+              const randomAmount = Math.random() * (max - min) + min;
+              const amount = randomAmount.toFixed(2);
               await addAirdropToQueue(address, amount, latestBlock);
+              
+              // Add buffer delay between queue additions to avoid rate limits
+              // Only delay if there are more addresses to process
+              if (i < scanResult.eligibleAddresses.length - 1) {
+                const bufferDelay = Math.floor(Math.random() * (currentConfig.maxBufferSeconds - currentConfig.minBufferSeconds + 1)) + currentConfig.minBufferSeconds;
+                logger.debug(`Buffer delay: waiting ${bufferDelay}s before processing next address...`);
+                await new Promise(resolve => setTimeout(resolve, bufferDelay * 1000));
+              }
             }
           }
         }

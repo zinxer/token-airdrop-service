@@ -13,7 +13,7 @@ datasource db {
 model AirdropHistory {
   id           Int      @id @default(autoincrement())
   address      String
-  amount       Int
+  amount       String   // Decimal amount as string to support fractional TKN tokens
   timestamp    DateTime @default(now())
   txHash       String?
   status       String   @default("pending") // pending/completed/failed
@@ -32,13 +32,14 @@ model AirdropConfig {
   isActive            Boolean  @default(false)
   minEthBalance       String   @default("0.001") // Minimum ETH balance for eligibility
   maxEthBalance       String   @default("0.01") // Maximum ETH balance for eligibility  
-  minTokenAmount        Int      @default(20) // Minimum TKN airdrop amount
-  maxTokenAmount        Int      @default(200) // Maximum TKN airdrop amount
+  minTokenAmount        String   @default("20") // Minimum TKN airdrop amount (supports decimals)
+  maxTokenAmount        String   @default("200") // Maximum TKN airdrop amount (supports decimals)
   minBufferSeconds    Int      @default(30) // Minimum seconds between airdrops
   maxBufferSeconds    Int      @default(300) // Maximum seconds between airdrops
   minScanIntervalSeconds Int   @default(10) // Minimum seconds between scans
   maxScanIntervalSeconds Int   @default(20) // Maximum seconds between scans
   maxRetries          Int      @default(3) // Max retries for failed transactions
+  maxGasPrice         String   @default("0.6") // Maximum gas price in gwei for airdrops
   currentConditionId  String   @default("eth_balance_range") // Current condition being used
   lastScannedBlock    BigInt? // Last block number that was scanned
   createdAt           DateTime @default(now())

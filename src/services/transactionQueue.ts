@@ -5,7 +5,7 @@ import { executeAirdrop } from '@/services/airdropEngine';
 interface QueuedAirdrop {
   address: string;
   blockNumber: bigint;
-  amount: number;
+  amount: string;
 }
 
 interface TransactionQueueState {
@@ -50,7 +50,7 @@ async function processQueue(): Promise<void> {
 
     if (result.success) {
       queueState.successful++;
-      queueState.totalDistributed += amount;
+      queueState.totalDistributed += parseFloat(amount);
     } else {
       queueState.failed++;
     }
@@ -88,7 +88,7 @@ export function stopTransactionQueue(): void {
   queueState.isRunning = false;
 }
 
-export async function addAirdropToQueue(address: string, amount: number, blockNumber: bigint): Promise<void> {
+export async function addAirdropToQueue(address: string, amount: string, blockNumber: bigint): Promise<void> {
   if (!queueState.isRunning) {
     logger.warn('Transaction queue is not running. Cannot add to queue.');
     return;

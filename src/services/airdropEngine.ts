@@ -52,6 +52,14 @@ export const walletClient: WalletClient = createWalletClient({
 // TKN Token contract
 let tokenContract: any;
 
+// Gas price cache
+let gasPriceCache: {
+  price: bigint;
+  timestamp: number;
+} | null = null;
+
+const GAS_PRICE_CACHE_DURATION = 10000; // Cache gas price for 10 seconds to avoid rate limits
+
 // Initialize contract
 async function initializeContract() {
   try {
@@ -91,10 +99,71 @@ async function initializeContract() {
 initializeContract().catch(console.error);
 
 /**
- * Generate random TKN amount between min and max
+ * Check current gas price and compare against threshold
+ * Uses caching to avoid multiple API calls within a short time
  */
-export function generateRandomTokenAmount(minAmount: number, maxAmount: number): number {
-  return Math.floor(Math.random() * (maxAmount - minAmount + 1)) + minAmount;
+export async function checkGasPrice(maxGasPriceGwei: string): Promise<{
+  acceptable: boolean;
+  currentGasPrice: number;
+  maxGasPrice: number;
+}> {
+  try {
+    // Check cache first
+    const now = Date.now();
+    if (gasPriceCache && (now - gasPriceCache.timestamp) < GAS_PRICE_CACHE_DURATION) {
+      const currentGasPriceGwei = parseFloat(formatUnits(gasPriceCache.price, 9));
+      const maxGasPrice = parseFloat(maxGasPriceGwei);
+      const acceptable = currentGasPriceGwei <= maxGasPrice;
+      
+      logger.debug(`Using cached gas price: ${currentGasPriceGwei.toFixed(2)} gwei (max: ${maxGasPrice} gwei) - ${acceptable ? 'ACCEPTABLE' : 'TOO HIGH'}`);
+      
+      return {
+        acceptable,
+        currentGasPrice: currentGasPriceGwei,
+        maxGasPrice
+      };
+    }
+
+    // Fetch fresh gas price
+    const gasPrice = await publicClient.getGasPrice();
+    
+    // Update cache
+    gasPriceCache = {
+      price: gasPrice,
+      timestamp: now
+    };
+    
+    const currentGasPriceGwei = parseFloat(formatUnits(gasPrice, 9));
+    const maxGasPrice = parseFloat(maxGasPriceGwei);
+    const acceptable = currentGasPriceGwei <= maxGasPrice;
+    
+    logger.info(`Current gas price: ${currentGasPriceGwei.toFixed(2)} gwei (max: ${maxGasPrice} gwei) - ${acceptable ? '✓ ACCEPTABLE' : '✗ TOO HIGH'}`);
+    
+    return {
+      acceptable,
+      currentGasPrice: currentGasPriceGwei,
+      maxGasPrice
+    };
+  } catch (error) {
+    logger.error(`Error checking gas price: ${error}`);
+    // On error, return as not acceptable to be conservative
+    return {
+      acceptable: false,
+      currentGasPrice: 999,
+      maxGasPrice: parseFloat(maxGasPriceGwei)
+    };
+  }
+}
+
+/**
+ * Generate random TKN amount between min and max (supports decimals)
+ */
+export function generateRandomTokenAmount(minAmount: string, maxAmount: string): string {
+  const min = parseFloat(minAmount);
+  const max = parseFloat(maxAmount);
+  const random = Math.random() * (max - min) + min;
+  // Return with 2 decimal places precision
+  return random.toFixed(2);
 }
 
 /**
@@ -221,7 +290,7 @@ export async function checkWalletFunds(): Promise<{
  */
 export async function executeAirdrop(
   address: string,
-  amount: number,
+  amount: string,
   blockNumber: bigint,
   maxRetries: number = 3,
   recoveryMode: boolean = false,
@@ -266,8 +335,8 @@ export async function executeAirdrop(
     attempt++;
     
     try {
-      // Convert amount to token units
-      const tokenAmount = parseUnits(amount.toString(), env.TOKEN_DECIMALS);
+      // Convert amount to token units (amount is already a decimal string)
+      const tokenAmount = parseUnits(amount, env.TOKEN_DECIMALS);
 
       let pendingRecordId: number;
 
@@ -389,7 +458,7 @@ export async function executeAirdrop(
  */
 export async function executeAirdropForRecovery(
   address: string,
-  amount: number,
+  amount: string,
   blockNumber: bigint,
   existingRecordId: number,
   maxRetries: number = 3

@@ -232,7 +232,7 @@ export async function cleanupStuckTransactions(): Promise<{
   details: Array<{
     id: number;
     address: string;
-    amount: number;
+    amount: string;
     status: string;
     timestamp: Date;
     txHash?: string;
@@ -274,7 +274,7 @@ export async function cleanupStuckTransactions(): Promise<{
     const details: Array<{
       id: number;
       address: string;
-      amount: number;
+      amount: string;
       status: string;
       timestamp: Date;
       txHash?: string;
@@ -349,7 +349,7 @@ export async function getDetailedRecoveryStats(): Promise<{
   recentActivity: Array<{
     id: number;
     address: string;
-    amount: number;
+    amount: string;
     status: string;
     timestamp: Date;
     txHash?: string;
