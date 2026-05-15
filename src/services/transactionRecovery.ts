@@ -86,6 +86,30 @@ export async function cleanupDuplicatePendingRecords(): Promise<{
 }
 
 /**
+ * Cancel all pending airdrop transactions on startup
+ */
+export async function cancelPendingTransactions(): Promise<{ cancelled: number }> {
+  try {
+    const result = await prisma.airdropHistory.updateMany({
+      where: { status: 'pending' },
+      data: {
+        status: 'failed',
+        errorMessage: 'Cancelled on service restart'
+      }
+    });
+
+    if (result.count > 0) {
+      logger.info(`Cancelled ${result.count} pending transactions on startup`);
+    }
+
+    return { cancelled: result.count };
+  } catch (error) {
+    logger.error(`Error cancelling pending transactions: ${error}`);
+    return { cancelled: 0 };
+  }
+}
+
+/**
  * Check and recover pending airdrop transactions
  */
 export async function recoverPendingTransactions(): Promise<{

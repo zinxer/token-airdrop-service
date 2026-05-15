@@ -4,7 +4,7 @@ import {
   getLatestBlockNumber,
 } from '@/services/blockScanner';
 import { checkWalletFunds, checkGasPrice } from '@/services/airdropEngine';
-import { recoverPendingTransactions } from '@/services/transactionRecovery';
+import { cancelPendingTransactions } from '@/services/transactionRecovery';
 import { prisma } from '@/utils/prisma';
 import { logger } from '@/utils/logger';
 import { startTransactionQueue, stopTransactionQueue, addAirdropToQueue, getQueueStatus } from '@/services/transactionQueue';
@@ -79,11 +79,8 @@ export async function startContinuousAirdropService(): Promise<void> {
 
     logger.config.loaded();
     
-    // Recover any pending transactions from previous runs
-    const recoveryResult = await recoverPendingTransactions();
-    if (recoveryResult.total > 0) {
-      logger.recovery.complete(recoveryResult.recovered, recoveryResult.failed, recoveryResult.total);
-    }
+    // Cancel any pending transactions from previous runs
+    await cancelPendingTransactions();
     
     // Get starting block
     serviceState.lastScannedBlock = 0n;
