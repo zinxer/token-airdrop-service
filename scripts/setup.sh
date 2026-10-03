@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Acme Distribution Backend Setup Script
-echo "🚀 Setting up Acme Distribution Backend..."
+# Token Airdrop Service Setup Script
+echo "🚀 Setting up Token Airdrop Service..."
 
 # Check for required tools
 check_requirements() {
@@ -34,7 +34,7 @@ install_dependencies() {
 setup_environment() {
     if [ ! -f .env ]; then
         echo "📋 Creating .env file from template..."
-        cp env.example .env
+        cp .env.example .env
         echo "⚠️  Please edit .env file with your actual configuration values!"
         echo "   Required values:"
         echo "   - ALCHEMY_API_KEY"

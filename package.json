@@ -1,7 +1,7 @@
 {
   "name": "token-airdrop-service",
   "version": "1.0.0",
-  "description": "Acme Algorithmic Distribution Backend - ERC-20 token distribution system with anti-dump mechanisms",
+  "description": "Continuous ERC-20 airdrop backend - ERC-20 token distribution system with anti-dump mechanisms",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc && tsc-alias",
@@ -23,15 +23,14 @@
     "url": "git+https://github.com/zinxer/token-airdrop-service.git"
   },
   "keywords": [
-    "acme",
     "ethereum",
     "airdrop",
     "erc20",
     "blockchain",
     "distribution"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "zinxer",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/zinxer/token-airdrop-service/issues"
   },
