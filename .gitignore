@@ -302,3 +302,17 @@ ganache-cli.log
 
 # Local development
 .local/
+
+# Secret guard
+bin/test.js
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+keystore/
+*.dump
+*.bak
+secrets/
